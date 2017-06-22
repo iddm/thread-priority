@@ -25,5 +25,4 @@ fn main() {
 
 ## License
 
-This project is [licensed under the MIT license]
-(https://github.com/vityafx/thread-priority/blob/master/LICENSE).
+This project is [licensed under the MIT license](https://github.com/vityafx/thread-priority/blob/master/LICENSE).
