@@ -2,6 +2,13 @@
 name = "thread-priority"
 version = "0.1.0"
 authors = ["Victor Polevoy <fx@thefx.co>"]
+description = "Library for managing threads priority and schedule policies"
+repository = "https://github.com/vityafx/thread-priority"
+documentation = "https://docs.rs/thread-priority/"
+readme = "README.md"
+license = "MIT"
+keywords = ["thread", "schedule", "priority", "pthread"]
+categories = ["concurrency"]
 
 [dependencies]
 libc = "0.2"
