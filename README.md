@@ -6,6 +6,12 @@
 
 
 A simple library to control thread schedule policies and thread priority via libc crate/pthread.
+This crate does not support all the plaforms yet but it is inteded to be developed so,
+so feel free to contribute!
+
+## Supported platforms
+
+- linux
 
 ## Example
 Setting thread priority to minimum:
