@@ -147,6 +147,8 @@ impl ThreadPriority {
 
 /// Sets thread's priority and schedule policy
 ///
+/// * May require privileges
+/// 
 /// # Usage
 ///
 /// Setting thread priority to minimum with normal schedule policy:
@@ -167,12 +169,10 @@ pub fn set_thread_priority(
     priority: ThreadPriority,
     policy: ThreadSchedulePolicy,
 ) -> Result<(), Error> {
-    unsafe {
-        match libc::pthread_setschedprio(native, priority.to_posix(policy)?) {
-            0 => Ok(()),
-            e => Err(Error::Pthread(e)),
-        }
-    }
+    let params = ScheduleParams {
+        sched_priority: priority.to_posix(policy)?
+    };
+    set_thread_schedule_policy(native, policy, params)
 }
 
 /// Returns current thread id (pthread)
