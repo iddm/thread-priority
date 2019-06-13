@@ -148,7 +148,7 @@ impl ThreadPriority {
 /// Sets thread's priority and schedule policy
 ///
 /// * May require privileges
-/// 
+///
 /// # Usage
 ///
 /// Setting thread priority to minimum with normal schedule policy:
@@ -170,7 +170,7 @@ pub fn set_thread_priority(
     policy: ThreadSchedulePolicy,
 ) -> Result<(), Error> {
     let params = ScheduleParams {
-        sched_priority: priority.to_posix(policy)?
+        sched_priority: priority.to_posix(policy)?,
     };
     set_thread_schedule_policy(native, policy, params)
 }
@@ -277,7 +277,7 @@ pub fn thread_schedule_policy_param(
 
 #[cfg(test)]
 mod tests {
-    use ::*;
+    use *;
 
     #[test]
     fn thread_schedule_policy_param_test() {
@@ -290,26 +290,23 @@ mod tests {
     fn set_thread_priority_test() {
         let thread_id = thread_native_id();
 
-        assert!(
-            set_thread_priority(
-                thread_id,
-                ThreadPriority::Min,
-                ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal)
-            ).is_ok()
-        );
-        assert!(
-            set_thread_priority(
-                thread_id,
-                ThreadPriority::Max,
-                ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal)
-            ).is_ok()
-        );
-        assert!(
-            set_thread_priority(
-                thread_id,
-                ThreadPriority::Specific(0),
-                ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal)
-            ).is_ok()
-        );
+        assert!(set_thread_priority(
+            thread_id,
+            ThreadPriority::Min,
+            ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal)
+        )
+        .is_ok());
+        assert!(set_thread_priority(
+            thread_id,
+            ThreadPriority::Max,
+            ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal)
+        )
+        .is_ok());
+        assert!(set_thread_priority(
+            thread_id,
+            ThreadPriority::Specific(0),
+            ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal)
+        )
+        .is_ok());
     }
 }
