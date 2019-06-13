@@ -1,28 +1,29 @@
 language: rust
-matrix:
-    fast_finish: true
-    include:
-        - rust: nightly
-        - rust: beta
-        - rust: stable
-
-sudo: false
-
+rust:
+  - stable
+  - beta
+os:
+  - linux
+  - windows
+  - osx
+dist: xenial
 cache:
-    apt: true
-    directories:
-        - $TRAVIS_BUILD_DIR/target
-        - $HOME/.cargo
-        
+  cargo: true
+  timeout: 900
+before_cache:
+  # Travis can't cache files that are not readable by "others"
+  - chmod -R a+r $HOME/.cargo
+matrix:
+  allow_failures:
+    - nightly
 before_script:
   - export PATH="$PATH:$HOME/.cargo/bin"
-  - rustup install nightly
-  - cargo +nightly install --force rustfmt-nightly
-
+  - rustup component add rustfmt
+  - rustup component add clippy
 script:
-  - cargo +nightly fmt -- --write-mode diff
   - cargo check
+  - cargo fmt --verbose --all -- --check
+  - cargo clippy
   - cargo test --verbose $FEATURES -- --nocapture
-      
 notifications:
-email: false
+  email: false
