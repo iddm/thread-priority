@@ -22,6 +22,7 @@ script:
   - cargo check
   - cargo fmt --verbose --all -- --check
   - cargo clippy
+  - cargo test --doc --verbose $FEATURES -- --nocapture
   - cargo test --verbose $FEATURES -- --nocapture
 notifications:
   email: false
