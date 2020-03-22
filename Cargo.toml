@@ -16,4 +16,4 @@ libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 libc = "0.2"
-winapi = "0.3"
+winapi = { version = "0.3", features = ["errhandlingapi", "processthreadsapi", "winnt"] }

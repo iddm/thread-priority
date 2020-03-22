@@ -5,7 +5,7 @@
 //! better control over those.
 
 use winapi::ctypes::c_int;
-use winapi::um::processthreadsapi::{GetCurrentThread, GetThreadPriority, SetThreadPriority};
+use winapi::um::processthreadsapi::{GetCurrentThread, SetThreadPriority};
 use winapi::um::winnt::HANDLE;
 
 use crate::{Error, ThreadPriority};
@@ -22,7 +22,7 @@ pub enum WinAPIThreadPriority {
     ///
     /// # Warning
     /// Windows Server 2003: This value is not supported.
-    BackgroundModeBegin = 0x00010000,
+    BackgroundModeBegin = 0x0001_0000,
     /// End background processing mode. The system restores the resource
     /// scheduling priorities of the thread as they were before the thread
     /// entered background processing mode.
@@ -32,7 +32,7 @@ pub enum WinAPIThreadPriority {
     ///
     /// # Warning
     /// Windows Server 2003: This value is not supported.
-    BackgroundModeEnd = 0x00020000,
+    BackgroundModeEnd = 0x0002_0000,
     /// Priority 1 point above the priority class.
     AboveNormal = 1,
     /// Priority 1 point below the priority class.
@@ -53,23 +53,23 @@ pub enum WinAPIThreadPriority {
     TimeCritical = 15,
 }
 
-impl TryFrom<ThreadPriority> for WinAPIThreadPriority {
+impl std::convert::TryFrom<ThreadPriority> for WinAPIThreadPriority {
     type Error = crate::Error;
 
     fn try_from(priority: ThreadPriority) -> Result<Self, Self::Error> {
-        match self {
+        Ok(match priority {
             ThreadPriority::Min => WinAPIThreadPriority::Lowest,
             ThreadPriority::Specific(p) => match p {
                 0 => WinAPIThreadPriority::Idle,
-                1..20 => WinAPIThreadPriority::Lowest,
-                21..40 => WinAPIThreadPriority::BelowNormal,
-                41..60 => WinAPIThreadPriority::Normal,
-                61..80 => WinAPIThreadPriority::AboveNormal,
-                81..100 => WinAPIThreadPriority::Highest,
-                _ => Err(Error::Priority("The value is out of range [0; 99]")),
+                1..=19 => WinAPIThreadPriority::Lowest,
+                21..=39 => WinAPIThreadPriority::BelowNormal,
+                41..=59 => WinAPIThreadPriority::Normal,
+                61..=79 => WinAPIThreadPriority::AboveNormal,
+                81..=99 => WinAPIThreadPriority::Highest,
+                _ => return Err(Error::Priority("The value is out of range [0; 99]")),
             },
             ThreadPriority::Max => WinAPIThreadPriority::Highest,
-        }
+        })
     }
 }
 
@@ -91,14 +91,11 @@ impl TryFrom<ThreadPriority> for WinAPIThreadPriority {
 /// If there's an error, the result of
 /// [`GetLastError`](https://docs.microsoft.com/en-us/windows/win32/api/errhandlingapi/nf-errhandlingapi-getlasterror) is returned.
 pub fn set_thread_priority(native: HANDLE, priority: ThreadPriority) -> Result<(), Error> {
+    use std::convert::TryFrom;
     use winapi::um::errhandlingapi::GetLastError;
 
     unsafe {
-        if SetThreadPriority(
-            native,
-            priority.try_into::<WinAPIThreadPriority>()? as c_int,
-        ) != 0
-        {
+        if SetThreadPriority(native, WinAPIThreadPriority::try_from(priority)? as c_int) != 0 {
             Ok(())
         } else {
             Err(Error::OS(GetLastError() as i32))
