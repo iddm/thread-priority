@@ -50,3 +50,10 @@ pub enum ThreadPriority {
     /// if not used properly.
     Max,
 }
+
+impl ThreadPriority {
+    /// Sets current thread's priority to this value.
+    pub fn set_for_current(self) -> Result<(), Error> {
+        set_current_thread_priority(self)
+    }
+}

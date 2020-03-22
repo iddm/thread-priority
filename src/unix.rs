@@ -110,11 +110,6 @@ impl ThreadPriority {
         };
         ret.map(|p| p as libc::c_int)
     }
-
-    /// Sets current thread's priority to this value.
-    pub fn set_for_current(self) -> Result<(), Error> {
-        set_current_thread_priority(self)
-    }
 }
 
 /// Sets thread's priority and schedule policy
