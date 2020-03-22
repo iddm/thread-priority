@@ -5,30 +5,24 @@
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 
-A simple library to control thread schedule policies and thread priority via libc crate/pthread.
+A simple library to control thread schedule policies and thread priority.
+
 This crate does not support all the plaforms yet but it is inteded to be developed so,
 so feel free to contribute!
 
 ## Supported platforms
-
-- linux
+- Linux
 
 ## Example
-Setting thread priority to minimum:
+Setting current thread's priority to minimum:
 
 ```rust,no_run
-
-extern crate thread_priority;
 use thread_priority::*;
 
 fn main() {
-    let thread_id = thread_native_id();
-    assert!(set_thread_priority(thread_id,
-                                ThreadPriority::Min,
-                                ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal)).is_ok());
+    assert!(set_current_thread_priority(thread_id, ThreadPriority::Min).is_ok());
 }
 ```
 
 ## License
-
 This project is [licensed under the MIT license](https://github.com/vityafx/thread-priority/blob/master/LICENSE).
