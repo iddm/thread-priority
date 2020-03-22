@@ -1,7 +1,5 @@
 //! Thread priority. A library for changing thread's priority.
 //!
-//! Uses `libpthread` to work with threads.
-//!
 //! # Usage
 //!
 //! Setting thread priority to minimum:
@@ -22,6 +20,8 @@ pub mod unix;
 pub use unix::*;
 #[cfg(windows)]
 pub mod windows;
+#[cfg(windows)]
+pub use windows::*;
 
 /// A error type
 #[derive(Debug, Copy, Clone)]

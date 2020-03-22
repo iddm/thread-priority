@@ -12,6 +12,7 @@ so feel free to contribute!
 
 ## Supported platforms
 - Linux
+- Windows
 
 ## Example
 Setting current thread's priority to minimum:
@@ -20,7 +21,7 @@ Setting current thread's priority to minimum:
 use thread_priority::*;
 
 fn main() {
-    assert!(set_current_thread_priority(thread_id, ThreadPriority::Min).is_ok());
+    assert!(set_current_thread_priority(ThreadPriority::Min).is_ok());
 }
 ```
 
