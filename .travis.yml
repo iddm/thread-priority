@@ -4,6 +4,7 @@ rust:
   - beta
 os:
   - linux
+  - windows
 dist: xenial
 cache:
   cargo: true

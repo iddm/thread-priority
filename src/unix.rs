@@ -7,6 +7,9 @@
 use crate::{Error, ThreadPriority};
 pub use libc::sched_param as ScheduleParams;
 
+/// An alias type for a thread id.
+pub type ThreadId = libc::pthread_t;
+
 /// The following "real-time" policies are also supported, for special time-critical applications
 /// that need precise control over the way in which runnable processes are selected for execution
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -111,9 +114,11 @@ impl ThreadPriority {
         ret.map(|p| p as libc::c_int)
     }
 
-    /// Sets current thread's priority to this value.
-    pub fn set_for_current(self) -> Result<(), Error> {
-        set_current_thread_priority(self)
+    /// Gets priority value from POSIX value.
+    /// In order to interpret it correctly, you should also take scheduling policy
+    /// into account.
+    pub fn from_posix(params: ScheduleParams) -> ThreadPriority {
+        ThreadPriority::Specific(params.sched_priority as u32)
     }
 }
 
@@ -134,7 +139,7 @@ impl ThreadPriority {
 ///                                        ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal)).is_ok());
 /// ```
 pub fn set_thread_priority_and_policy(
-    native: libc::pthread_t,
+    native: ThreadId,
     priority: ThreadPriority,
     policy: ThreadSchedulePolicy,
 ) -> Result<(), Error> {
@@ -178,7 +183,7 @@ pub fn thread_schedule_policy() -> Result<ThreadSchedulePolicy, Error> {
 /// assert!(set_thread_schedule_policy(thread_id, policy, params).is_ok());
 /// ```
 pub fn set_thread_schedule_policy(
-    native: libc::pthread_t,
+    native: ThreadId,
     policy: ThreadSchedulePolicy,
     params: ScheduleParams,
 ) -> Result<(), Error> {
@@ -206,7 +211,7 @@ pub fn set_thread_schedule_policy(
 /// assert!(thread_schedule_policy_param(thread_id).is_ok());
 /// ```
 pub fn thread_schedule_policy_param(
-    native: libc::pthread_t,
+    native: ThreadId,
 ) -> Result<(ThreadSchedulePolicy, ScheduleParams), Error> {
     unsafe {
         let mut policy = 0 as libc::c_int;
@@ -224,6 +229,13 @@ pub fn thread_schedule_policy_param(
     }
 }
 
+/// Get current thread's priority value.
+pub fn thread_priority() -> Result<ThreadPriority, Error> {
+    Ok(ThreadPriority::from_posix(
+        thread_schedule_policy_param(thread_native_id())?.1,
+    ))
+}
+
 /// Returns current thread id, which is the current OS's native handle.
 /// It may or may not be equal or even related to rust's thread id,
 /// there is absolutely no guarantee for that.
@@ -235,7 +247,7 @@ pub fn thread_schedule_policy_param(
 ///
 /// assert!(thread_native_id() > 0);
 /// ```
-pub fn thread_native_id() -> libc::pthread_t {
+pub fn thread_native_id() -> ThreadId {
     unsafe { libc::pthread_self() }
 }
 
