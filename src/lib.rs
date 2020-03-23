@@ -14,14 +14,18 @@
 #![warn(missing_docs)]
 #![deny(warnings)]
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 pub mod unix;
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 pub use unix::*;
 #[cfg(windows)]
 pub mod windows;
 #[cfg(windows)]
 pub use windows::*;
+#[cfg(target_os = "macos")]
+pub mod macos;
+#[cfg(target_os = "macos")]
+pub use macos::*;
 
 /// A error type
 #[derive(Debug, Copy, Clone)]
@@ -33,6 +37,8 @@ pub enum Error {
     OS(i32),
     /// FFI failure
     Ffi(&'static str),
+    /// Attempt to probe values on an platform which is not supported (macOS..)
+    UnsupportedPlatform(),
 }
 
 /// Thread priority enumeration.
