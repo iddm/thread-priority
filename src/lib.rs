@@ -60,6 +60,16 @@ pub enum ThreadPriority {
 
 impl ThreadPriority {
     /// Sets current thread's priority to this value.
+    ///
+    ///
+    /// # Usage
+    ///
+    /// ```rust
+    /// use thread_priority::*;
+    ///
+    /// // Ignore the response- we just keep going even if priority changes on a given platform are not supported (macOS)
+    /// let _ = set_current_thread_priority(ThreadPriority::Max);
+    /// ```
     pub fn set_for_current(self) -> Result<(), Error> {
         set_current_thread_priority(self)
     }
