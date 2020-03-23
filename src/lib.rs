@@ -41,8 +41,9 @@ pub enum ThreadPriority {
     /// Holds a value representing the minimum possible priority.
     Min,
     /// Holds a specific priority value. Should be in [0; 100] range,
-    /// a percentage value.
-    Specific(u8),
+    /// a percentage value. The `u32` value is reserved for different
+    /// OS'es support.
+    Specific(u32),
     /// Holds a value representing the maximum possible priority.
     /// Should be used with caution, it solely depends on the target
     /// os where the program is going to be running on, how it will
@@ -55,5 +56,32 @@ impl ThreadPriority {
     /// Sets current thread's priority to this value.
     pub fn set_for_current(self) -> Result<(), Error> {
         set_current_thread_priority(self)
+    }
+}
+
+/// Represents an OS thread.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub struct Thread {
+    /// Thread's priority.
+    pub priority: ThreadPriority,
+    /// Thread's ID (or handle).
+    pub id: ThreadId,
+}
+
+impl Thread {
+    /// Get current thread.
+    ///
+    /// # Usage
+    ///
+    /// ```rust
+    /// use thread_priority::*;
+    ///
+    /// assert!(Thread::current().is_ok());
+    /// ```
+    pub fn current() -> Result<Thread, Error> {
+        Ok(Thread {
+            priority: thread_priority()?,
+            id: thread_native_id(),
+        })
     }
 }
