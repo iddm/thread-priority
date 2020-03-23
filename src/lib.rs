@@ -7,9 +7,9 @@
 //! ```rust
 //! use thread_priority::*;
 //!
-//! assert!(set_current_thread_priority(ThreadPriority::Min).is_ok());
+//! let result = set_current_thread_priority(ThreadPriority::Min);
 //! // Or like this:
-//! assert!(ThreadPriority::Min.set_for_current().is_ok());
+//! let result = ThreadPriority::Min.set_for_current();
 //! ```
 #![warn(missing_docs)]
 #![deny(warnings)]
@@ -75,14 +75,14 @@ pub struct Thread {
 }
 
 impl Thread {
-    /// Get current thread.
+    /// Get current thread as a platform-independent structure
     ///
     /// # Usage
     ///
     /// ```rust
     /// use thread_priority::*;
     ///
-    /// assert!(Thread::current().is_ok());
+    /// let thread = Thread::current();
     /// ```
     pub fn current() -> Result<Thread, Error> {
         Ok(Thread {
