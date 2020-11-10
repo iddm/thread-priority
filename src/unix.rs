@@ -5,10 +5,49 @@
 //! better control over those.
 
 use crate::{Error, ThreadPriority};
-pub use libc::sched_param as ScheduleParams;
 
 /// An alias type for a thread id.
 pub type ThreadId = libc::pthread_t;
+
+/// Proxy structure to maintain compatibility between glibc and musl
+pub struct ScheduleParams {
+    /// Copy of `sched_priority` from `libc::sched_param`
+    pub sched_priority: libc::c_int,
+}
+
+impl ScheduleParams {
+    #[cfg(not(target_env = "musl"))]
+    fn to_posix(self) -> libc::sched_param {
+        libc::sched_param {
+            sched_priority: self.sched_priority,
+        }
+    }
+
+    #[cfg(target_env = "musl")]
+    fn to_posix(self) -> libc::sched_param {
+        use libc::timespec as TimeSpec;
+
+        libc::sched_param {
+            sched_priority: self.sched_priority,
+            sched_ss_low_priority: 0,
+            sched_ss_repl_period: TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            },
+            sched_ss_init_budget: TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            },
+            sched_ss_max_repl: 0,
+        }
+    }
+
+    fn from_posix(sched_param: libc::sched_param) -> Self {
+        ScheduleParams {
+            sched_priority: sched_param.sched_priority,
+        }
+    }
+}
 
 /// The following "real-time" policies are also supported, for special time-critical applications
 /// that need precise control over the way in which runnable processes are selected for execution
@@ -187,11 +226,12 @@ pub fn set_thread_schedule_policy(
     policy: ThreadSchedulePolicy,
     params: ScheduleParams,
 ) -> Result<(), Error> {
+    let params = params.to_posix();
     unsafe {
         let ret = libc::pthread_setschedparam(
             native,
             policy.to_posix(),
-            &params as *const ScheduleParams,
+            &params as *const libc::sched_param,
         );
         match ret {
             0 => Ok(()),
@@ -215,15 +255,18 @@ pub fn thread_schedule_policy_param(
 ) -> Result<(ThreadSchedulePolicy, ScheduleParams), Error> {
     unsafe {
         let mut policy = 0 as libc::c_int;
-        let mut params = ScheduleParams { sched_priority: 0 };
+        let mut params = ScheduleParams { sched_priority: 0 }.to_posix();
 
         let ret = libc::pthread_getschedparam(
             native,
             &mut policy as *mut libc::c_int,
-            &mut params as *mut ScheduleParams,
+            &mut params as *mut libc::sched_param,
         );
         match ret {
-            0 => Ok((ThreadSchedulePolicy::from_posix(policy)?, params)),
+            0 => Ok((
+                ThreadSchedulePolicy::from_posix(policy)?,
+                ScheduleParams::from_posix(params),
+            )),
             e => Err(Error::OS(e)),
         }
     }
