@@ -17,14 +17,14 @@ pub struct ScheduleParams {
 
 impl ScheduleParams {
     #[cfg(not(target_env = "musl"))]
-    fn to_posix(self) -> libc::sched_param {
+    fn into_posix(self) -> libc::sched_param {
         libc::sched_param {
             sched_priority: self.sched_priority,
         }
     }
 
     #[cfg(target_env = "musl")]
-    fn to_posix(self) -> libc::sched_param {
+    fn into_posix(self) -> libc::sched_param {
         use libc::timespec as TimeSpec;
 
         libc::sched_param {
@@ -226,7 +226,7 @@ pub fn set_thread_schedule_policy(
     policy: ThreadSchedulePolicy,
     params: ScheduleParams,
 ) -> Result<(), Error> {
-    let params = params.to_posix();
+    let params = params.into_posix();
     unsafe {
         let ret = libc::pthread_setschedparam(
             native,
@@ -254,8 +254,8 @@ pub fn thread_schedule_policy_param(
     native: ThreadId,
 ) -> Result<(ThreadSchedulePolicy, ScheduleParams), Error> {
     unsafe {
-        let mut policy = 0 as libc::c_int;
-        let mut params = ScheduleParams { sched_priority: 0 }.to_posix();
+        let mut policy = 0i32;
+        let mut params = ScheduleParams { sched_priority: 0 }.into_posix();
 
         let ret = libc::pthread_getschedparam(
             native,
