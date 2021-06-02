@@ -129,7 +129,7 @@ impl ThreadSchedulePolicy {
 
 impl ThreadPriority {
     /// POSIX value can not be known without knowing the scheduling policy
-    /// https://linux.die.net/man/2/sched_get_priority_max
+    /// <https://linux.die.net/man/2/sched_get_priority_max>
     pub fn to_posix(self, policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
         let ret = match self {
             ThreadPriority::Min => match policy {
