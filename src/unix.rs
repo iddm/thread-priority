@@ -4,7 +4,9 @@
 //! the unix threads, and this module provides
 //! better control over those.
 
-use crate::{Error, ThreadPriority};
+use std::convert::TryFrom;
+
+use crate::{Error, ThreadPriority, ThreadPriorityValue};
 
 /// An alias type for a thread id.
 pub type ThreadId = libc::pthread_t;
@@ -78,7 +80,7 @@ impl ScheduleParams {
 
 /// The following "real-time" policies are also supported, for special time-critical applications
 /// that need precise control over the way in which runnable processes are selected for execution
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum RealtimeThreadSchedulePolicy {
     /// A first-in, first-out policy
     Fifo,
@@ -102,7 +104,7 @@ impl RealtimeThreadSchedulePolicy {
 }
 
 /// Normal (usual) schedule policies
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum NormalThreadSchedulePolicy {
     /// For running very low priority background jobs
     Idle,
@@ -124,7 +126,7 @@ impl NormalThreadSchedulePolicy {
 }
 
 /// Thread schedule policy definition
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ThreadSchedulePolicy {
     /// Normal thread schedule policies
     Normal(NormalThreadSchedulePolicy),
@@ -179,7 +181,22 @@ impl ThreadPriority {
                 ThreadSchedulePolicy::Realtime(_) => Ok(1),
                 _ => Ok(0),
             },
-            ThreadPriority::Specific(p) => match policy {
+            ThreadPriority::Crossplatform(ThreadPriorityValue(p)) => match policy {
+                // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
+                #[cfg(target_os = "linux")]
+                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
+                    Error::Priority("Deadline scheduling must use deadline priority."),
+                ),
+                ThreadSchedulePolicy::Realtime(_) if (p == 0 || p > 99) => {
+                    Err(Error::Priority("The value is out of range [0; 99]"))
+                }
+                ThreadSchedulePolicy::Normal(_) if p != 0 => Err(Error::Priority(
+                    "The value can be only 0 for normal scheduling policy",
+                )),
+                _ => Ok(p as u32),
+            },
+            // TODO avoid code duplication.
+            ThreadPriority::Os(crate::ThreadPriorityOsValue(p)) => match policy {
                 // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
                 #[cfg(target_os = "linux")]
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
@@ -214,7 +231,7 @@ impl ThreadPriority {
     /// In order to interpret it correctly, you should also take scheduling policy
     /// into account.
     pub fn from_posix(params: ScheduleParams) -> ThreadPriority {
-        ThreadPriority::Specific(params.sched_priority as u32)
+        ThreadPriority::Crossplatform(ThreadPriorityValue(params.sched_priority as u8))
     }
 }
 
@@ -375,6 +392,87 @@ pub fn thread_priority() -> Result<ThreadPriority, Error> {
     ))
 }
 
+/// A helper trait for other threads to implement to be able to call methods
+/// on threads themselves.
+///
+/// ```rust
+/// use thread_priority::*;
+///
+/// assert!(std::thread::current().get_priority().is_ok());
+///
+/// let join_handle = std::thread::spawn(|| println!("Hello world!"));
+/// assert!(join_handle.thread().get_priority().is_ok());
+///
+/// join_handle.join();
+/// ```
+pub trait ThreadExt {
+    /// Gets the current thread's priority.
+    /// For more info read [`thread_priority`].
+    ///
+    /// ```rust
+    /// use thread_priority::*;
+    ///
+    /// assert!(std::thread::current().get_priority().is_ok());
+    /// ```
+    fn get_priority(&self) -> Result<ThreadPriority, Error> {
+        thread_priority()
+    }
+
+    /// Sets the current thread's priority.
+    /// For more info see [`ThreadPriority::set_for_current`].
+    ///
+    /// ```rust
+    /// use thread_priority::*;
+    ///
+    /// assert!(std::thread::current().set_priority(ThreadPriority::Min).is_ok());
+    /// ```
+    fn set_priority(&self, priority: ThreadPriority) -> Result<(), Error> {
+        priority.set_for_current()
+    }
+
+    /// Gets the current thread's schedule policy.
+    /// For more info read [`thread_schedule_policy`].
+    fn get_schedule_policy(&self) -> Result<ThreadSchedulePolicy, Error> {
+        thread_schedule_policy()
+    }
+
+    /// Returns current thread's schedule policy and parameters.
+    /// For more info read [`thread_schedule_policy_param`].
+    fn get_schedule_policy_param(&self) -> Result<(ThreadSchedulePolicy, ScheduleParams), Error> {
+        thread_schedule_policy_param(thread_native_id())
+    }
+
+    /// Sets current thread's schedule policy.
+    /// For more info read [`set_thread_schedule_policy`].
+    fn set_schedule_policy(
+        &self,
+        policy: ThreadSchedulePolicy,
+        priority: ThreadPriority,
+    ) -> Result<(), Error> {
+        let params = ScheduleParams {
+            sched_priority: match policy {
+                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => 0,
+                _ => priority.to_posix(policy)?,
+            },
+        };
+        set_thread_schedule_policy(thread_native_id(), policy, params, priority)
+    }
+
+    /// Returns native unix thread id.
+    /// For more info read [`thread_native_id`].
+    ///
+    /// ```rust
+    /// use thread_priority::*;
+    ///
+    /// assert!(std::thread::current().get_native_id() > 0);
+    fn get_native_id(&self) -> ThreadId {
+        thread_native_id()
+    }
+}
+
+/// Auto-implementation of this trait for the [`std::thread::Thread`].
+impl ThreadExt for std::thread::Thread {}
+
 /// Returns current thread id, which is the current OS's native handle.
 /// It may or may not be equal or even related to rust's thread id,
 /// there is absolutely no guarantee for that.
@@ -388,6 +486,18 @@ pub fn thread_priority() -> Result<ThreadPriority, Error> {
 /// ```
 pub fn thread_native_id() -> ThreadId {
     unsafe { libc::pthread_self() }
+}
+
+impl TryFrom<u8> for ThreadPriority {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        if let 0..=100 = value {
+            Ok(ThreadPriority::Crossplatform(ThreadPriorityValue(value)))
+        } else {
+            Err("The thread priority value must be in range of [0; 100].")
+        }
+    }
 }
 
 #[cfg(test)]
@@ -419,7 +529,7 @@ mod tests {
         .is_ok());
         assert!(set_thread_priority_and_policy(
             thread_id,
-            ThreadPriority::Specific(0),
+            ThreadPriority::Crossplatform(ThreadPriorityValue(0)),
             ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal)
         )
         .is_ok());
