@@ -4,3 +4,5 @@ Cargo.lock
 **/*.swo
 **/*.swp
 .idea/
+Vagrantfile
+.vagrant/
