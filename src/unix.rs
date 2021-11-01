@@ -15,6 +15,33 @@ pub struct ScheduleParams {
     pub sched_priority: libc::c_int,
 }
 
+/// Copy of the Linux kernel's sched_attr type
+#[repr(C)]
+#[derive(Debug, Default)]
+#[cfg(target_os = "linux")]
+pub struct SchedAttr {
+    size: u32,
+    sched_policy: u32,
+    sched_flags: u64,
+
+    /// for SCHED_NORMAL and SCHED_BATCH
+    sched_nice: i32,
+    /// for SCHED_FIFO, SCHED_RR
+    sched_priority: u32,
+
+    /// for SCHED_DEADLINE
+    sched_runtime: u64,
+    /// for SCHED_DEADLINE
+    sched_deadline: u64,
+    /// for SCHED_DEADLINE
+    sched_period: u64,
+
+    /// Utilization hint
+    sched_util_min: u32,
+    /// Utilization hint
+    sched_util_max: u32,
+}
+
 impl ScheduleParams {
     #[cfg(not(target_env = "musl"))]
     fn into_posix(self) -> libc::sched_param {
@@ -57,12 +84,19 @@ pub enum RealtimeThreadSchedulePolicy {
     Fifo,
     /// A round-robin policy
     RoundRobin,
+    /// A deadline policy. Note, due to Linux expecting a pid_t and not a pthread_t, the given
+    /// [ThreadId](struct.ThreadId) will be interpreted as a pid_t. This policy is NOT
+    /// POSIX-compatible, so we only include it for linux targets.
+    #[cfg(target_os = "linux")]
+    Deadline,
 }
 impl RealtimeThreadSchedulePolicy {
     fn to_posix(self) -> libc::c_int {
         match self {
             RealtimeThreadSchedulePolicy::Fifo => 1,
             RealtimeThreadSchedulePolicy::RoundRobin => 2,
+            #[cfg(target_os = "linux")]
+            RealtimeThreadSchedulePolicy::Deadline => 6,
         }
     }
 }
@@ -122,6 +156,10 @@ impl ThreadSchedulePolicy {
             2 => Ok(ThreadSchedulePolicy::Realtime(
                 RealtimeThreadSchedulePolicy::RoundRobin,
             )),
+            #[cfg(target_os = "linux")]
+            6 => Ok(ThreadSchedulePolicy::Realtime(
+                RealtimeThreadSchedulePolicy::Deadline,
+            )),
             _ => Err(Error::Ffi("Can't parse schedule policy from posix")),
         }
     }
@@ -133,10 +171,18 @@ impl ThreadPriority {
     pub fn to_posix(self, policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
         let ret = match self {
             ThreadPriority::Min => match policy {
+                // SCHED_DEADLINE doesn't really have a notion of priority,
+                // so fix min and max time slices to 100ms (the syscall takes ns).
+                #[cfg(target_os = "linux")]
+                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Ok(100 * 10_u32.pow(6)),
                 ThreadSchedulePolicy::Realtime(_) => Ok(1),
                 _ => Ok(0),
             },
             ThreadPriority::Specific(p) => match policy {
+                // SCHED_DEADLINE priorities are nanoseconds for runtime, deadline, and period,
+                // accept any value
+                #[cfg(target_os = "linux")]
+                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Ok(p),
                 ThreadSchedulePolicy::Realtime(_) if (p == 0 || p > 99) => {
                     Err(Error::Priority("The value is out of range [0; 99]"))
                 }
@@ -146,6 +192,10 @@ impl ThreadPriority {
                 _ => Ok(p),
             },
             ThreadPriority::Max => match policy {
+                // SCHED_DEADLINE doesn't really have a notion of priority,
+                // so fix min and max time slices to 100ms (the syscall takes ns).
+                #[cfg(target_os = "linux")]
+                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Ok(100 * 10_u32.pow(6)),
                 ThreadSchedulePolicy::Realtime(_) => Ok(99),
                 _ => Ok(0),
             },
@@ -211,6 +261,8 @@ pub fn thread_schedule_policy() -> Result<ThreadSchedulePolicy, Error> {
 /// Sets thread schedule policy.
 ///
 /// * May require privileges
+/// * Deadline policy requires a tid, not a pthread_t, so invoking this while using a deadline
+/// policy will interpret the given [ThreadId](struct.ThreadId) as a pid_t (thread tid).
 ///
 /// # Usage
 /// ```rust,no_run
@@ -228,11 +280,37 @@ pub fn set_thread_schedule_policy(
 ) -> Result<(), Error> {
     let params = params.into_posix();
     unsafe {
-        let ret = libc::pthread_setschedparam(
-            native,
-            policy.to_posix(),
-            &params as *const libc::sched_param,
-        );
+        let ret = match policy {
+            // SCHED_DEADLINE policy requires its own syscall
+            #[cfg(target_os = "linux")]
+            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
+                let tid = native as libc::pid_t;
+                let sched_attr = SchedAttr {
+                    size: std::mem::size_of::<SchedAttr>() as u32,
+                    sched_policy: policy.to_posix() as u32,
+
+                    sched_runtime: params.sched_priority as u64,
+                    sched_deadline: params.sched_priority as u64,
+                    sched_period: params.sched_priority as u64,
+
+                    ..Default::default()
+                };
+                libc::syscall(
+                    libc::SYS_sched_setattr,
+                    tid,
+                    &sched_attr as *const _,
+                    // we are not setting SCHED_FLAG_RECLAIM nor SCHED_FLAG_DL_OVERRUN
+                    0
+                ) as i32
+            }
+            _ => {
+                libc::pthread_setschedparam(
+                    native,
+                    policy.to_posix(),
+                    &params as *const libc::sched_param,
+                )
+            }
+        };
         match ret {
             0 => Ok(()),
             e => Err(Error::OS(e)),
