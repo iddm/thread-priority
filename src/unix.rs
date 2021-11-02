@@ -35,6 +35,11 @@ pub struct SchedAttr {
     sched_deadline: u64,
     /// for SCHED_DEADLINE
     sched_period: u64,
+
+    /// Utilization hint
+    sched_util_min: u32,
+    /// Utilization hint
+    sched_util_max: u32,
 }
 
 impl ScheduleParams {
