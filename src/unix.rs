@@ -408,4 +408,36 @@ mod tests {
         )
         .is_ok());
     }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn set_deadline_policy() {
+        assert!(set_thread_priority_and_policy(
+            0, // current thread
+            ThreadPriority::Specific(100 * 10_u32.pow(6)),
+            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline)
+        )
+        .is_ok());
+
+        // now we check the return values
+        unsafe {
+            let mut sched_attr = SchedAttr::default();
+            let ret = libc::syscall(
+                libc::SYS_sched_getattr,
+                0, // current thread
+                &mut sched_attr as *mut _,
+                std::mem::size_of::<SchedAttr>() as u32,
+                0, // flags must be 0
+            );
+
+            assert!(ret >= 0);
+            assert_eq!(
+                sched_attr.sched_policy,
+                RealtimeThreadSchedulePolicy::Deadline.to_posix() as u32
+            );
+            assert_eq!(sched_attr.sched_runtime, 100 * 10_u64.pow(6));
+            assert_eq!(sched_attr.sched_period, 100 * 10_u64.pow(6));
+            assert_eq!(sched_attr.sched_deadline, 100 * 10_u64.pow(6));
+        }
+    }
 }
