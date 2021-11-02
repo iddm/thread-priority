@@ -174,7 +174,9 @@ impl ThreadPriority {
                 // SCHED_DEADLINE doesn't really have a notion of priority,
                 // so fix min and max time slices to 100ms (the syscall takes ns).
                 #[cfg(target_os = "linux")]
-                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Ok(100 * 10_u32.pow(6)),
+                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
+                    Ok(100 * 10_u32.pow(6))
+                }
                 ThreadSchedulePolicy::Realtime(_) => Ok(1),
                 _ => Ok(0),
             },
@@ -195,7 +197,9 @@ impl ThreadPriority {
                 // SCHED_DEADLINE doesn't really have a notion of priority,
                 // so fix min and max time slices to 100ms (the syscall takes ns).
                 #[cfg(target_os = "linux")]
-                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Ok(100 * 10_u32.pow(6)),
+                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
+                    Ok(100 * 10_u32.pow(6))
+                }
                 ThreadSchedulePolicy::Realtime(_) => Ok(99),
                 _ => Ok(0),
             },
@@ -300,16 +304,14 @@ pub fn set_thread_schedule_policy(
                     tid,
                     &sched_attr as *const _,
                     // we are not setting SCHED_FLAG_RECLAIM nor SCHED_FLAG_DL_OVERRUN
-                    0
+                    0,
                 ) as i32
             }
-            _ => {
-                libc::pthread_setschedparam(
-                    native,
-                    policy.to_posix(),
-                    &params as *const libc::sched_param,
-                )
-            }
+            _ => libc::pthread_setschedparam(
+                native,
+                policy.to_posix(),
+                &params as *const libc::sched_param,
+            ),
         };
         match ret {
             0 => Ok(()),
