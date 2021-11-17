@@ -171,20 +171,20 @@ impl ThreadPriority {
     pub fn to_posix(self, policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
         let ret = match self {
             ThreadPriority::Min => match policy {
-                // SCHED_DEADLINE doesn't really have a notion of priority,
-                // so fix min and max time slices to 100ms (the syscall takes ns).
+                // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
                 #[cfg(target_os = "linux")]
-                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
-                    Ok(100 * 10_u32.pow(6))
-                }
+                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
+                    Error::Priority("Deadline scheduling must use deadline priority."),
+                ),
                 ThreadSchedulePolicy::Realtime(_) => Ok(1),
                 _ => Ok(0),
             },
             ThreadPriority::Specific(p) => match policy {
-                // SCHED_DEADLINE priorities are nanoseconds for runtime, deadline, and period,
-                // accept any value
+                // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
                 #[cfg(target_os = "linux")]
-                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Ok(p),
+                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
+                    Error::Priority("Deadline scheduling must use deadline priority."),
+                ),
                 ThreadSchedulePolicy::Realtime(_) if (p == 0 || p > 99) => {
                     Err(Error::Priority("The value is out of range [0; 99]"))
                 }
@@ -194,15 +194,18 @@ impl ThreadPriority {
                 _ => Ok(p),
             },
             ThreadPriority::Max => match policy {
-                // SCHED_DEADLINE doesn't really have a notion of priority,
-                // so fix min and max time slices to 100ms (the syscall takes ns).
+                // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
                 #[cfg(target_os = "linux")]
-                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
-                    Ok(100 * 10_u32.pow(6))
-                }
+                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
+                    Error::Priority("Deadline scheduling must use deadline priority."),
+                ),
                 ThreadSchedulePolicy::Realtime(_) => Ok(99),
                 _ => Ok(0),
             },
+            #[cfg(target_os = "linux")]
+            ThreadPriority::Deadline(_, _, _) => Err(Error::Priority(
+                "Deadline is non-POSIX and cannot be converted.",
+            )),
         };
         ret.map(|p| p as libc::c_int)
     }
@@ -237,9 +240,12 @@ pub fn set_thread_priority_and_policy(
     policy: ThreadSchedulePolicy,
 ) -> Result<(), Error> {
     let params = ScheduleParams {
-        sched_priority: priority.to_posix(policy)?,
+        sched_priority: match policy {
+            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => 0,
+            _ => priority.to_posix(policy)?,
+        },
     };
-    set_thread_schedule_policy(native, policy, params)
+    set_thread_schedule_policy(native, policy, params, priority)
 }
 
 /// Set current thread's priority.
@@ -275,12 +281,14 @@ pub fn thread_schedule_policy() -> Result<ThreadSchedulePolicy, Error> {
 /// let thread_id = thread_native_id();
 /// let policy = ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo);
 /// let params = ScheduleParams { sched_priority: 3 as libc::c_int };
-/// assert!(set_thread_schedule_policy(thread_id, policy, params).is_ok());
+/// let priority = ThreadPriority::Min;
+/// assert!(set_thread_schedule_policy(thread_id, policy, params, priority).is_ok());
 /// ```
 pub fn set_thread_schedule_policy(
     native: ThreadId,
     policy: ThreadSchedulePolicy,
     params: ScheduleParams,
+    priority: ThreadPriority,
 ) -> Result<(), Error> {
     let params = params.into_posix();
     unsafe {
@@ -288,14 +296,22 @@ pub fn set_thread_schedule_policy(
             // SCHED_DEADLINE policy requires its own syscall
             #[cfg(target_os = "linux")]
             ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
+                let (runtime, deadline, period) = match priority {
+                    ThreadPriority::Deadline(r, d, p) => (r, d, p),
+                    _ => {
+                        return Err(Error::Priority(
+                            "Deadline policy given without deadline priority.",
+                        ))
+                    }
+                };
                 let tid = native as libc::pid_t;
                 let sched_attr = SchedAttr {
                     size: std::mem::size_of::<SchedAttr>() as u32,
                     sched_policy: policy.to_posix() as u32,
 
-                    sched_runtime: params.sched_priority as u64,
-                    sched_deadline: params.sched_priority as u64,
-                    sched_period: params.sched_priority as u64,
+                    sched_runtime: runtime as u64,
+                    sched_deadline: deadline as u64,
+                    sched_period: period as u64,
 
                     ..Default::default()
                 };
@@ -414,7 +430,7 @@ mod tests {
     fn set_deadline_policy() {
         assert!(set_thread_priority_and_policy(
             0, // current thread
-            ThreadPriority::Specific(100 * 10_u32.pow(6)),
+            ThreadPriority::Deadline(1 * 10_u64.pow(6), 10 * 10_u64.pow(6), 100 * 10_u64.pow(6)),
             ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline)
         )
         .is_ok());
@@ -435,9 +451,9 @@ mod tests {
                 sched_attr.sched_policy,
                 RealtimeThreadSchedulePolicy::Deadline.to_posix() as u32
             );
-            assert_eq!(sched_attr.sched_runtime, 100 * 10_u64.pow(6));
+            assert_eq!(sched_attr.sched_runtime, 1 * 10_u64.pow(6));
+            assert_eq!(sched_attr.sched_deadline, 10 * 10_u64.pow(6));
             assert_eq!(sched_attr.sched_period, 100 * 10_u64.pow(6));
-            assert_eq!(sched_attr.sched_deadline, 100 * 10_u64.pow(6));
         }
     }
 }
