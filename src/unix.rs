@@ -428,6 +428,9 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn set_deadline_policy() {
+        // allow the identity operation for clarity
+        #![allow(clippy::identity_op)]
+
         assert!(set_thread_priority_and_policy(
             0, // current thread
             ThreadPriority::Deadline(1 * 10_u64.pow(6), 10 * 10_u64.pow(6), 100 * 10_u64.pow(6)),
