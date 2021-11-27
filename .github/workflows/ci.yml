@@ -62,7 +62,7 @@ jobs:
 
       - name: Test all features (other)
         if: matrix.features == '' && runner.os != 'macOS'
-        run: sudo -E $HOME/bin/cargo test --all-features
+        run: sudo -E /usr/share/rust/.cargo/bin/cargo test --all-features
 
   clippy:
     name: Run clippy
