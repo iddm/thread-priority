@@ -61,7 +61,7 @@ jobs:
         run: cargo test --all-features -- --skip set_deadline_policy
 
       - name: Test all features (Linux)
-        if: matrix.features == '' && runner.os == 'Linux
+        if: matrix.features == '' && runner.os == 'Linux'
         run: sudo -E /usr/share/rust/.cargo/bin/cargo test --all-features
 
   clippy:
