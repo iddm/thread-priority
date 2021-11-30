@@ -44,6 +44,11 @@ pub enum ThreadPriority {
     /// a percentage value. The `u32` value is reserved for different
     /// OS'es support.
     Specific(u32),
+    /// Holds scheduling parameters for Deadline scheduling. These are, in order,
+    /// the nanoseconds for runtime, deadline, and period. Please note that the
+    /// kernel enforces runtime <= deadline <= period.
+    #[cfg(target_os = "linux")]
+    Deadline(u64, u64, u64),
     /// Holds a value representing the maximum possible priority.
     /// Should be used with caution, it solely depends on the target
     /// os where the program is going to be running on, how it will
