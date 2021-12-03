@@ -1,6 +1,6 @@
 [package]
 name = "thread-priority"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Victor Polevoy <fx@thefx.co>"]
 description = "Library for managing threads priority and schedule policies"
 repository = "https://github.com/vityafx/thread-priority"
@@ -10,6 +10,9 @@ license = "MIT"
 keywords = ["thread", "schedule", "priority", "pthread"]
 categories = ["concurrency", "asynchronous", "os"]
 edition = "2018"
+
+[dependencies]
+log = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

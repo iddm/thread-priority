@@ -14,7 +14,9 @@ so feel free to contribute!
 - Linux
 - Windows
 
-## Example
+## Examples
+
+### Minimal cross-platform examples
 Setting current thread's priority to minimum:
 
 ```rust,no_run
@@ -23,6 +25,95 @@ use thread_priority::*;
 fn main() {
     assert!(set_current_thread_priority(ThreadPriority::Min).is_ok());
 }
+```
+
+The same as above but using a specific value:
+
+```rust,no_run
+use thread_priority::*;
+use std::convert::TryInto;
+
+fn main() {
+    // The lower the number the lower the priority.
+    assert!(set_current_thread_priority(ThreadPriority::Crossplatform(0.try_into().unwrap())).is_ok());
+}
+```
+
+### Windows-specific examples
+Set the thread priority to the lowest possible value:
+
+```rust,no_run
+use thread_priority::*;
+
+fn main() {
+    // The lower the number the lower the priority.
+    assert!(set_current_thread_priority(ThreadPriority::Os(WinAPIThreadPriority::Lowest.into())).is_ok());
+}
+```
+
+Set the ideal processor for the new thread:
+
+```rust,no_run
+use thread_priority::*;
+
+fn main() {
+    std::thread::spawn(|| {
+        set_thread_ideal_processor(thread_native_id(), 0);
+        println!("Hello world!");
+    });
+}
+```
+
+
+### Building a thread using the ThreadBuilderExt trait
+
+```rust,no_run
+use thread_priority::*;
+use thread_priority::ThreadBuilderExt;
+
+let thread = std::thread::Builder::new()
+    .name("MyNewThread".to_owned())
+    .spawn_with_priority(ThreadPriority::Max, |result| {
+        // This is printed out from within the spawned thread.
+        println!("Set priority result: {:?}", result);
+        assert!(result.is_ok());
+}).unwrap();
+thread.join();
+```
+
+### Building a thread using the ThreadBuilder.
+
+```rust,no_run
+use thread_priority::*;
+
+let thread = ThreadBuilder::default()
+    .name("MyThread")
+    .priority(ThreadPriority::Max)
+    .spawn(|result| {
+        // This is printed out from within the spawned thread.
+        println!("Set priority result: {:?}", result);
+        assert!(result.is_ok());
+}).unwrap();
+thread.join();
+
+// Another example where we don't care about the priority having been set.
+let thread = ThreadBuilder::default()
+    .name("MyThread")
+    .priority(ThreadPriority::Max)
+    .spawn_careless(|| {
+        // This is printed out from within the spawned thread.
+        println!("We don't care about the priority result.");
+}).unwrap();
+thread.join();
+```
+
+### Using ThreadExt trait on the current thread
+
+```rust,no_run
+use thread_priority::*;
+
+assert!(std::thread::current().get_priority().is_ok());
+println!("This thread's native id is: {:?}", std::thread::current().get_native_id());
 ```
 
 ## License
