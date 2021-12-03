@@ -112,8 +112,35 @@ pub enum Error {
 /// Platform-independent thread priority value.
 /// Should be in `[0; 100)` range. The higher the number is - the higher
 /// the priority.
+///
+/// The only way to create such a value is a safe conversion from an 8-byte
+/// unsigned integer ([`u8`]):
+///
+/// ```rust
+/// use thread_priority::*;
+/// use std::convert::{TryFrom, TryInto};
+///
+/// // Create the lowest possible priority value.
+/// assert!(ThreadPriorityValue::try_from(0u8).is_ok());
+/// // Create it implicitly via `TryInto`:
+/// let _priority = ThreadPriority::Crossplatform(0u8.try_into().unwrap());
+/// ```
+///
+/// In case you need to get the raw value out of it, use the `Into<u8>` trait:
+///
+/// ```rust
+/// use thread_priority::*;
+/// use std::convert::TryFrom;
+///
+/// // Create the lowest possible priority value.
+/// let priority = ThreadPriorityValue::try_from(0u8).unwrap();
+/// // Create it implicitly via `TryInto`:
+/// let raw_value: u8 = priority.into();
+/// assert_eq!(raw_value, 0);
+/// ```
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ThreadPriorityValue(u8);
+
 impl std::convert::TryFrom<u8> for ThreadPriorityValue {
     type Error = &'static str;
 
@@ -123,6 +150,15 @@ impl std::convert::TryFrom<u8> for ThreadPriorityValue {
         } else {
             Err("The value is not in the range of [0;99]")
         }
+    }
+}
+
+// The From<u8> is unsafe, so there is a TryFrom instead.
+// For this reason we silent the warning from clippy.
+#[allow(clippy::from_over_into)]
+impl std::convert::Into<u8> for ThreadPriorityValue {
+    fn into(self) -> u8 {
+        self.0
     }
 }
 
