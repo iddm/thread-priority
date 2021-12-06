@@ -336,23 +336,17 @@ pub fn set_thread_schedule_policy(
                 let sched_attr = SchedAttr {
                     size: std::mem::size_of::<SchedAttr>() as u32,
                     sched_policy: policy.to_posix() as u32,
-
+                    sched_flags: match flags {
+                        None => 0,
+                        Some(flags) => flags as u64,
+                    },
                     sched_runtime: runtime as u64,
                     sched_deadline: deadline as u64,
                     sched_period: period as u64,
 
                     ..Default::default()
                 };
-                libc::syscall(
-                    libc::SYS_sched_setattr,
-                    tid,
-                    &sched_attr as *const _,
-                    // we are not setting SCHED_FLAG_RECLAIM nor SCHED_FLAG_DL_OVERRUN
-                    match flags {
-                        None => 0,
-                        Some(flags) => flags as i32,
-                    },
-                ) as i32
+                libc::syscall(libc::SYS_sched_setattr, tid, &sched_attr as *const _, 0) as i32
             }
             _ => libc::pthread_setschedparam(
                 native,
@@ -586,6 +580,50 @@ mod tests {
             assert_eq!(sched_attr.sched_runtime, 1 * 10_u64.pow(6));
             assert_eq!(sched_attr.sched_deadline, 10 * 10_u64.pow(6));
             assert_eq!(sched_attr.sched_period, 100 * 10_u64.pow(6));
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn set_deadline_flags() {
+        // allow the identity operation for clarity
+        #![allow(clippy::identity_op)]
+
+        assert!(set_thread_priority_and_policy(
+            0, // current thread
+            ThreadPriority::Deadline(
+                1 * 10_u64.pow(6),
+                10 * 10_u64.pow(6),
+                100 * 10_u64.pow(6),
+                Some(DeadlineFlags::DeadlineOverrun)
+            ),
+            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline)
+        )
+        .is_ok());
+
+        // now we check the return values
+        unsafe {
+            let mut sched_attr = SchedAttr::default();
+            let ret = libc::syscall(
+                libc::SYS_sched_getattr,
+                0, // current thread
+                &mut sched_attr as *mut _,
+                std::mem::size_of::<SchedAttr>() as u32,
+                0, // flags must be 0
+            );
+
+            assert!(ret >= 0);
+            assert_eq!(
+                sched_attr.sched_policy,
+                RealtimeThreadSchedulePolicy::Deadline.to_posix() as u32
+            );
+            assert_eq!(sched_attr.sched_runtime, 1 * 10_u64.pow(6));
+            assert_eq!(sched_attr.sched_deadline, 10 * 10_u64.pow(6));
+            assert_eq!(sched_attr.sched_period, 100 * 10_u64.pow(6));
+            assert_eq!(
+                sched_attr.sched_flags,
+                DeadlineFlags::DeadlineOverrun as u64
+            )
         }
     }
 }
