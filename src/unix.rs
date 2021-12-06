@@ -110,7 +110,7 @@ pub enum DeadlineFlags {
     ResetOnFork = 0x01,
     /// The thread may reclaim bandwidth that is unused by another realtime thread.
     Reclaim = 0x02,
-    /// Request to be send SIGXCPU when this thread overruns its deadline.
+    /// Request to be sent SIGXCPU when this thread overruns its deadline.
     DeadlineOverrun = 0x04,
 }
 
