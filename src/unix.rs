@@ -103,6 +103,17 @@ impl RealtimeThreadSchedulePolicy {
     }
 }
 
+/// Flags for controlling Deadline scheduling behavior.
+#[derive(Debug, Clone, Copy, Ord, PartialEq, Eq, PartialOrd, Hash)]
+pub enum DeadlineFlags {
+    /// Children created by fork will not inhered privileged scheduling policies.
+    ResetOnFork = 0x01,
+    /// The thread may reclaim bandwidth that is unused by another realtime thread.
+    Reclaim = 0x02,
+    /// Request to be send SIGXCPU when this thread overruns its deadline.
+    DeadlineOverrun = 0x04,
+}
+
 /// Normal (usual) schedule policies
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum NormalThreadSchedulePolicy {
@@ -220,7 +231,7 @@ impl ThreadPriority {
                 _ => Ok(0),
             },
             #[cfg(target_os = "linux")]
-            ThreadPriority::Deadline(_, _, _) => Err(Error::Priority(
+            ThreadPriority::Deadline(_, _, _, _) => Err(Error::Priority(
                 "Deadline is non-POSIX and cannot be converted.",
             )),
         };
@@ -313,8 +324,8 @@ pub fn set_thread_schedule_policy(
             // SCHED_DEADLINE policy requires its own syscall
             #[cfg(target_os = "linux")]
             ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
-                let (runtime, deadline, period) = match priority {
-                    ThreadPriority::Deadline(r, d, p) => (r, d, p),
+                let (runtime, deadline, period, flags) = match priority {
+                    ThreadPriority::Deadline(r, d, p, f) => (r, d, p, f),
                     _ => {
                         return Err(Error::Priority(
                             "Deadline policy given without deadline priority.",
@@ -337,7 +348,10 @@ pub fn set_thread_schedule_policy(
                     tid,
                     &sched_attr as *const _,
                     // we are not setting SCHED_FLAG_RECLAIM nor SCHED_FLAG_DL_OVERRUN
-                    0,
+                    match flags {
+                        None => 0,
+                        Some(flags) => flags as i32,
+                    },
                 ) as i32
             }
             _ => libc::pthread_setschedparam(
@@ -543,7 +557,12 @@ mod tests {
 
         assert!(set_thread_priority_and_policy(
             0, // current thread
-            ThreadPriority::Deadline(1 * 10_u64.pow(6), 10 * 10_u64.pow(6), 100 * 10_u64.pow(6)),
+            ThreadPriority::Deadline(
+                1 * 10_u64.pow(6),
+                10 * 10_u64.pow(6),
+                100 * 10_u64.pow(6),
+                None
+            ),
             ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline)
         )
         .is_ok());

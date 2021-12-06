@@ -182,7 +182,7 @@ pub enum ThreadPriority {
     /// the nanoseconds for runtime, deadline, and period. Please note that the
     /// kernel enforces runtime <= deadline <= period.
     #[cfg(target_os = "linux")]
-    Deadline(u64, u64, u64),
+    Deadline(u64, u64, u64, Option<DeadlineFlags>),
     /// Holds a value representing the maximum possible priority.
     /// Should be used with caution, it solely depends on the target
     /// os where the program is going to be running on, how it will
