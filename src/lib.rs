@@ -87,9 +87,23 @@
 #![warn(missing_docs)]
 #![deny(warnings)]
 
-#[cfg(unix)]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
 pub mod unix;
-#[cfg(unix)]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
 pub use unix::*;
 
 #[cfg(windows)]
