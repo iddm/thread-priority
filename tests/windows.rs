@@ -1,7 +1,7 @@
 #![cfg(windows)]
 use rstest::rstest;
-use thread_priority::*;
 use std::convert::TryInto;
+use thread_priority::*;
 
 #[rstest]
 #[case(ThreadPriority::Min, ThreadPriority::Os(WinAPIThreadPriority::Lowest.try_into().unwrap()))]
@@ -15,12 +15,6 @@ fn get_and_set_priority_requires_capabilities(
 
     let set_result = set_thread_priority(thread_id, input_priority);
     let get_result = get_thread_priority(thread_id);
-    assert_eq!(
-        set_result,
-        Ok(())
-    );
-    assert_eq!(
-        get_result,
-        Ok(expected_priority),
-    );
+    assert_eq!(set_result, Ok(()));
+    assert_eq!(get_result, Ok(expected_priority),);
 }

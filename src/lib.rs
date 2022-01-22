@@ -185,8 +185,8 @@ pub struct ThreadPriorityOsValue(u32);
 pub enum ThreadPriority {
     /// Holds a value representing the minimum possible priority.
     #[cfg_attr(
-    target_os = "windows",
-    doc = "\
+        target_os = "windows",
+        doc = "\
 The `ThreadPriority::Min` value is mapped to `WinAPIThreadPriority::Lowest` and not
 `WinAPIThreadPriority::Idle` to avoid unexpected drawbacks. Use the specific value
 to set it to `WinAPIThreadPriority::Idle` when it is really needed.
@@ -200,8 +200,8 @@ to set it to `WinAPIThreadPriority::Idle` when it is really needed.
     /// Holds an operating system specific value. If it is not possible to obtain the
     /// [`ThreadPriority::Crossplatform`] variant of the value, this is returned instead.
     #[cfg_attr(
-    target_os = "windows",
-    doc = "\
+        target_os = "windows",
+        doc = "\
 The value is matched among possible values in Windows from `WinAPIThreadPriority::Idle` till 
 `WinAPIThreadPriority::TimeCritical`.
 "
@@ -218,8 +218,8 @@ The value is matched among possible values in Windows from `WinAPIThreadPriority
     /// behave. On some systems, the whole system may become frozen
     /// if not used properly.
     #[cfg_attr(
-    target_os = "windows",
-    doc = "\
+        target_os = "windows",
+        doc = "\
 The `ThreadPriority::Max` value is mapped to `WinAPIThreadPriority::Highest` and not
 `WinAPIThreadPriority::TimeCritical` to avoid unexpected drawbacks. Use the specific value
 to set it to `WinAPIThreadPriority::TimeCritical` when it is really needed.
