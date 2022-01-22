@@ -219,7 +219,13 @@ impl ThreadPriority {
                 ThreadSchedulePolicy::Realtime(_)
                     if !((MIN_PRIORITY..=MAX_PRIORITY).contains(&(p as i32))) =>
                 {
-                    Err(Error::Priority(concatcp!("The value is out of range [", MIN_PRIORITY, "; ", MAX_PRIORITY, "]")))
+                    Err(Error::Priority(concatcp!(
+                        "The value is out of range [",
+                        MIN_PRIORITY,
+                        "; ",
+                        MAX_PRIORITY,
+                        "]"
+                    )))
                 }
                 ThreadSchedulePolicy::Normal(_) if p as i32 != NORMAL_PRIORITY => Err(
                     Error::Priority("The value can be only 0 for normal scheduling policy"),
@@ -236,11 +242,21 @@ impl ThreadPriority {
                 ThreadSchedulePolicy::Realtime(_)
                     if !((MIN_PRIORITY..=MAX_PRIORITY).contains(&(p as i32))) =>
                 {
-                    Err(Error::Priority(concatcp!("The value is out of range [", MIN_PRIORITY, "; ", MAX_PRIORITY, "]")))
+                    Err(Error::Priority(concatcp!(
+                        "The value is out of range [",
+                        MIN_PRIORITY,
+                        "; ",
+                        MAX_PRIORITY,
+                        "]"
+                    )))
                 }
-                ThreadSchedulePolicy::Normal(_) if p as i32 != NORMAL_PRIORITY => Err(
-                    Error::Priority(concatcp!("The value can be only ", NORMAL_PRIORITY, " for normal scheduling policy")),
-                ),
+                ThreadSchedulePolicy::Normal(_) if p as i32 != NORMAL_PRIORITY => {
+                    Err(Error::Priority(concatcp!(
+                        "The value can be only ",
+                        NORMAL_PRIORITY,
+                        " for normal scheduling policy"
+                    )))
+                }
                 _ => Ok(p),
             },
             ThreadPriority::Max => match policy {
