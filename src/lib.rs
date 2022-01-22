@@ -112,7 +112,7 @@ pub mod windows;
 pub use windows::*;
 
 /// A error type
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Error {
     /// A value which describes why it is impossible to use such a priority.
     Priority(&'static str),
@@ -233,7 +233,7 @@ impl Thread {
     /// ```
     pub fn current() -> Result<Thread, Error> {
         Ok(Thread {
-            priority: thread_priority()?,
+            priority: get_current_thread_priority()?,
             id: thread_native_id(),
         })
     }

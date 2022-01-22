@@ -206,20 +206,44 @@ pub fn set_current_thread_priority(priority: ThreadPriority) -> Result<(), Error
     set_thread_priority(thread_id, priority)
 }
 
-/// Get current thread's priority value.
+/// Get the thread's priority value.
 ///
-/// Returns current thread id, which is the current OS's native handle.
-/// It may or may not be equal or even related to rust's thread id,
-/// there is absolutely no guarantee for that.
+/// Returns current thread's priority.
 ///
 /// # Usage
 ///
 /// ```rust
-/// use thread_priority::thread_priority;
+/// use thread_priority::get_thread_priority;
 ///
-/// assert!(thread_priority().is_ok());
+/// assert!(get_priority().is_ok());
 /// ```
-pub fn thread_priority() -> Result<ThreadPriority, Error> {
+pub fn get_thread_priority(native: ThreadId) -> Result<ThreadPriority, Error> {
+    use std::convert::TryFrom;
+
+    unsafe {
+        let ret = GetThreadPriority(native);
+        if ret as u32 != winbase::THREAD_PRIORITY_ERROR_RETURN {
+            Ok(ThreadPriority::Os(crate::ThreadPriorityOsValue(
+                WinAPIThreadPriority::try_from(ret as DWORD)? as u32,
+            )))
+        } else {
+            Err(Error::OS(GetLastError() as i32))
+        }
+    }
+}
+
+/// Get current thread's priority value.
+///
+/// Returns current thread's priority.
+///
+/// # Usage
+///
+/// ```rust
+/// use thread_priority::get_current_thread_priority;
+///
+/// assert!(get_thread_priority().is_ok());
+/// ```
+pub fn get_current_thread_priority() -> Result<ThreadPriority, Error> {
     use std::convert::TryFrom;
 
     unsafe {

@@ -1,6 +1,6 @@
 [package]
 name = "thread-priority"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Victor Polevoy <fx@thefx.co>"]
 description = "Library for managing threads priority and schedule policies"
 repository = "https://github.com/vityafx/thread-priority"
@@ -11,8 +11,12 @@ keywords = ["thread", "schedule", "priority", "pthread"]
 categories = ["concurrency", "asynchronous", "os"]
 edition = "2018"
 
+[dev-dependencies]
+rstest = "0.12"
+
 [dependencies]
 log = "0.4"
+const_format = "0.2"
 
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "dragonfly", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))'.dependencies]
 libc = "0.2"

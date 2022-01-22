@@ -6,8 +6,26 @@
 
 use std::convert::TryFrom;
 
+use const_format::concatcp;
+
 use crate::{Error, ThreadPriority, ThreadPriorityValue};
 use std::mem::MaybeUninit;
+
+#[cfg(not(target_os = "macos"))]
+const SCHED_FIFO: i32 = 1;
+#[cfg(target_os = "macos")]
+const SCHED_FIFO: i32 = 4;
+
+// Processes scheduled under one of the real-time policies
+// (SCHED_FIFO, SCHED_RR) have a sched_priority value in the range 1
+// (low) to 99 (high).
+const MIN_PRIORITY: i32 = 1;
+const MAX_PRIORITY: i32 = 99;
+// For threads scheduled under one of the normal scheduling policies
+//  (SCHED_OTHER, SCHED_IDLE, SCHED_BATCH), sched_priority is not
+//  used in scheduling decisions (it must be specified as 0).
+// <https://man7.org/linux/man-pages/man7/sched.7.html>
+const NORMAL_PRIORITY: i32 = 0;
 
 /// An alias type for a thread id.
 pub type ThreadId = libc::pthread_t;
@@ -74,13 +92,11 @@ pub enum RealtimeThreadSchedulePolicy {
     #[cfg(target_os = "linux")]
     Deadline,
 }
+
 impl RealtimeThreadSchedulePolicy {
     fn to_posix(self) -> libc::c_int {
         match self {
-            #[cfg(not(target_os = "macos"))]
-            RealtimeThreadSchedulePolicy::Fifo => 1,
-            #[cfg(target_os = "macos")]
-            RealtimeThreadSchedulePolicy::Fifo => 4,
+            RealtimeThreadSchedulePolicy::Fifo => SCHED_FIFO,
             RealtimeThreadSchedulePolicy::RoundRobin => 2,
             #[cfg(target_os = "linux")]
             RealtimeThreadSchedulePolicy::Deadline => 6,
@@ -147,7 +163,7 @@ impl ThreadSchedulePolicy {
             5 => Ok(ThreadSchedulePolicy::Normal(
                 NormalThreadSchedulePolicy::Idle,
             )),
-            1 => Ok(ThreadSchedulePolicy::Realtime(
+            SCHED_FIFO => Ok(ThreadSchedulePolicy::Realtime(
                 RealtimeThreadSchedulePolicy::Fifo,
             )),
             2 => Ok(ThreadSchedulePolicy::Realtime(
@@ -167,7 +183,7 @@ impl ThreadSchedulePolicy {
             1 => Ok(ThreadSchedulePolicy::Normal(
                 NormalThreadSchedulePolicy::Other,
             )),
-            4 => Ok(ThreadSchedulePolicy::Realtime(
+            SCHED_FIFO => Ok(ThreadSchedulePolicy::Realtime(
                 RealtimeThreadSchedulePolicy::Fifo,
             )),
             2 => Ok(ThreadSchedulePolicy::Realtime(
@@ -191,8 +207,8 @@ impl ThreadPriority {
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
-                ThreadSchedulePolicy::Realtime(_) => Ok(1),
-                _ => Ok(0),
+                ThreadSchedulePolicy::Realtime(_) => Ok(MIN_PRIORITY as u32),
+                _ => Ok(NORMAL_PRIORITY as u32),
             },
             ThreadPriority::Crossplatform(ThreadPriorityValue(p)) => match policy {
                 // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
@@ -200,12 +216,14 @@ impl ThreadPriority {
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
-                ThreadSchedulePolicy::Realtime(_) if (p == 0 || p > 99) => {
-                    Err(Error::Priority("The value is out of range [0; 99]"))
+                ThreadSchedulePolicy::Realtime(_)
+                    if !((MIN_PRIORITY..=MAX_PRIORITY).contains(&(p as i32))) =>
+                {
+                    Err(Error::Priority(concatcp!("The value is out of range [", MIN_PRIORITY, "; ", MAX_PRIORITY, "]")))
                 }
-                ThreadSchedulePolicy::Normal(_) if p != 0 => Err(Error::Priority(
-                    "The value can be only 0 for normal scheduling policy",
-                )),
+                ThreadSchedulePolicy::Normal(_) if p as i32 != NORMAL_PRIORITY => Err(
+                    Error::Priority("The value can be only 0 for normal scheduling policy"),
+                ),
                 _ => Ok(p as u32),
             },
             // TODO avoid code duplication.
@@ -215,12 +233,14 @@ impl ThreadPriority {
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
-                ThreadSchedulePolicy::Realtime(_) if (p == 0 || p > 99) => {
-                    Err(Error::Priority("The value is out of range [0; 99]"))
+                ThreadSchedulePolicy::Realtime(_)
+                    if !((MIN_PRIORITY..=MAX_PRIORITY).contains(&(p as i32))) =>
+                {
+                    Err(Error::Priority(concatcp!("The value is out of range [", MIN_PRIORITY, "; ", MAX_PRIORITY, "]")))
                 }
-                ThreadSchedulePolicy::Normal(_) if p != 0 => Err(Error::Priority(
-                    "The value can be only 0 for normal scheduling policy",
-                )),
+                ThreadSchedulePolicy::Normal(_) if p as i32 != NORMAL_PRIORITY => Err(
+                    Error::Priority(concatcp!("The value can be only ", NORMAL_PRIORITY, " for normal scheduling policy")),
+                ),
                 _ => Ok(p),
             },
             ThreadPriority::Max => match policy {
@@ -229,8 +249,8 @@ impl ThreadPriority {
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
-                ThreadSchedulePolicy::Realtime(_) => Ok(99),
-                _ => Ok(0),
+                ThreadSchedulePolicy::Realtime(_) => Ok(MAX_PRIORITY as u32),
+                _ => Ok(NORMAL_PRIORITY as u32),
             },
             #[cfg(target_os = "linux")]
             ThreadPriority::Deadline(_, _, _) => Err(Error::Priority(
@@ -317,11 +337,6 @@ pub fn set_current_thread_priority(priority: ThreadPriority) -> Result<(), Error
 /// assert!(thread_schedule_policy().is_ok());
 /// ```
 pub fn thread_schedule_policy() -> Result<ThreadSchedulePolicy, Error> {
-    #[cfg(not(target_os = "macos"))]
-    unsafe {
-        ThreadSchedulePolicy::from_posix(libc::sched_getscheduler(libc::getpid()))
-    }
-    #[cfg(target_os = "macos")]
     thread_schedule_policy_param(thread_native_id()).map(|policy| policy.0)
 }
 
@@ -386,6 +401,7 @@ pub fn set_thread_schedule_policy(
                 &params as *const libc::sched_param,
             ),
         };
+        // This is just to silent the unused variable warning.
         let _priority = priority;
         match ret {
             0 => Ok(()),
@@ -426,11 +442,16 @@ pub fn thread_schedule_policy_param(
     }
 }
 
-/// Get current thread's priority value.
-pub fn thread_priority() -> Result<ThreadPriority, Error> {
+/// Get the thread's priority value.
+pub fn get_thread_priority(native: ThreadId) -> Result<ThreadPriority, Error> {
     Ok(ThreadPriority::from_posix(
-        thread_schedule_policy_param(thread_native_id())?.1,
+        thread_schedule_policy_param(native)?.1,
     ))
+}
+
+/// Get current thread's priority value.
+pub fn get_current_thread_priority() -> Result<ThreadPriority, Error> {
+    get_thread_priority(thread_native_id())
 }
 
 /// A helper trait for other threads to implement to be able to call methods
@@ -456,7 +477,7 @@ pub trait ThreadExt {
     /// assert!(std::thread::current().get_priority().is_ok());
     /// ```
     fn get_priority(&self) -> Result<ThreadPriority, Error> {
-        thread_priority()
+        get_current_thread_priority()
     }
 
     /// Sets the current thread's priority.
