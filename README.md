@@ -7,11 +7,15 @@
 
 A simple library to control thread schedule policies and thread priority.
 
-This crate does not support all the plaforms yet but it is inteded to be developed so,
-so feel free to contribute!
+If your operating system isn't yet supported, please, create an issue.
 
 ## Supported platforms
 - Linux
+- DragonFly
+- FreeBSD
+- OpenBSD
+- NetBSD
+- macOS
 - Windows
 
 ## Examples

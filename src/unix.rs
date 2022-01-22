@@ -7,11 +7,13 @@
 use std::convert::TryFrom;
 
 use crate::{Error, ThreadPriority, ThreadPriorityValue};
+use std::mem::MaybeUninit;
 
 /// An alias type for a thread id.
 pub type ThreadId = libc::pthread_t;
 
 /// Proxy structure to maintain compatibility between glibc and musl
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ScheduleParams {
     /// Copy of `sched_priority` from `libc::sched_param`
     pub sched_priority: libc::c_int,
@@ -45,30 +47,10 @@ pub struct SchedAttr {
 }
 
 impl ScheduleParams {
-    #[cfg(not(target_env = "musl"))]
     fn into_posix(self) -> libc::sched_param {
-        libc::sched_param {
-            sched_priority: self.sched_priority,
-        }
-    }
-
-    #[cfg(target_env = "musl")]
-    fn into_posix(self) -> libc::sched_param {
-        use libc::timespec as TimeSpec;
-
-        libc::sched_param {
-            sched_priority: self.sched_priority,
-            sched_ss_low_priority: 0,
-            sched_ss_repl_period: TimeSpec {
-                tv_sec: 0,
-                tv_nsec: 0,
-            },
-            sched_ss_init_budget: TimeSpec {
-                tv_sec: 0,
-                tv_nsec: 0,
-            },
-            sched_ss_max_repl: 0,
-        }
+        let mut param = unsafe { MaybeUninit::<libc::sched_param>::zeroed().assume_init() };
+        param.sched_priority = self.sched_priority;
+        param
     }
 
     fn from_posix(sched_param: libc::sched_param) -> Self {
@@ -95,7 +77,10 @@ pub enum RealtimeThreadSchedulePolicy {
 impl RealtimeThreadSchedulePolicy {
     fn to_posix(self) -> libc::c_int {
         match self {
+            #[cfg(not(target_os = "macos"))]
             RealtimeThreadSchedulePolicy::Fifo => 1,
+            #[cfg(target_os = "macos")]
+            RealtimeThreadSchedulePolicy::Fifo => 4,
             RealtimeThreadSchedulePolicy::RoundRobin => 2,
             #[cfg(target_os = "linux")]
             RealtimeThreadSchedulePolicy::Deadline => 6,
@@ -116,11 +101,20 @@ pub enum NormalThreadSchedulePolicy {
     Normal,
 }
 impl NormalThreadSchedulePolicy {
+    #[cfg(not(target_os = "macos"))]
     fn to_posix(self) -> libc::c_int {
         match self {
             NormalThreadSchedulePolicy::Idle => 5,
             NormalThreadSchedulePolicy::Batch => 3,
             NormalThreadSchedulePolicy::Other | NormalThreadSchedulePolicy::Normal => 0,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn to_posix(self) -> libc::c_int {
+        match self {
+            NormalThreadSchedulePolicy::Other => 1,
+            _ => panic!("Invalid value for berkley schedule policy."),
         }
     }
 }
@@ -141,6 +135,7 @@ impl ThreadSchedulePolicy {
         }
     }
 
+    #[cfg(not(target_os = "macos"))]
     fn from_posix(policy: libc::c_int) -> Result<ThreadSchedulePolicy, Error> {
         match policy {
             0 => Ok(ThreadSchedulePolicy::Normal(
@@ -163,6 +158,24 @@ impl ThreadSchedulePolicy {
                 RealtimeThreadSchedulePolicy::Deadline,
             )),
             _ => Err(Error::Ffi("Can't parse schedule policy from posix")),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn from_posix(policy: libc::c_int) -> Result<ThreadSchedulePolicy, Error> {
+        match policy {
+            1 => Ok(ThreadSchedulePolicy::Normal(
+                NormalThreadSchedulePolicy::Other,
+            )),
+            4 => Ok(ThreadSchedulePolicy::Realtime(
+                RealtimeThreadSchedulePolicy::Fifo,
+            )),
+            2 => Ok(ThreadSchedulePolicy::Realtime(
+                RealtimeThreadSchedulePolicy::RoundRobin,
+            )),
+            _ => Err(Error::Ffi(
+                "Can't parse schedule policy from berkley values",
+            )),
         }
     }
 }
@@ -243,14 +256,32 @@ impl ThreadPriority {
 ///
 /// Setting thread priority to minimum with normal schedule policy:
 ///
-/// ```rust
-/// use thread_priority::*;
-///
-/// let thread_id = thread_native_id();
-/// assert!(set_thread_priority_and_policy(thread_id,
-///                                        ThreadPriority::Min,
-///                                        ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal)).is_ok());
-/// ```
+#[cfg_attr(
+    target_os = "macos",
+    doc = "\
+```rust
+use thread_priority::*;
+
+let thread_id = thread_native_id();
+assert!(set_thread_priority_and_policy(thread_id,
+                                       ThreadPriority::Min,
+                                       ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other)).is_ok());
+```
+"
+)]
+#[cfg_attr(
+    not(target_os = "macos"),
+    doc = "\
+```rust
+use thread_priority::*;
+
+let thread_id = thread_native_id();
+assert!(set_thread_priority_and_policy(thread_id,
+                                       ThreadPriority::Min,
+                                       ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal)).is_ok());
+```
+"
+)]
 pub fn set_thread_priority_and_policy(
     native: ThreadId,
     priority: ThreadPriority,
@@ -268,6 +299,9 @@ pub fn set_thread_priority_and_policy(
 /// Set current thread's priority.
 pub fn set_current_thread_priority(priority: ThreadPriority) -> Result<(), Error> {
     let thread_id = thread_native_id();
+    #[cfg(target_os = "macos")]
+    let policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other);
+    #[cfg(not(target_os = "macos"))]
     let policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal);
     set_thread_priority_and_policy(thread_id, priority, policy)
 }
@@ -281,6 +315,7 @@ pub fn set_current_thread_priority(priority: ThreadPriority) -> Result<(), Error
 ///
 /// assert!(thread_schedule_policy().is_ok());
 /// ```
+#[cfg(not(target_os = "macos"))]
 pub fn thread_schedule_policy() -> Result<ThreadSchedulePolicy, Error> {
     unsafe { ThreadSchedulePolicy::from_posix(libc::sched_getscheduler(libc::getpid())) }
 }
@@ -511,6 +546,32 @@ mod tests {
         assert!(thread_schedule_policy_param(thread_id).is_ok());
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn set_thread_priority_test() {
+        let thread_id = thread_native_id();
+
+        assert!(set_thread_priority_and_policy(
+            thread_id,
+            ThreadPriority::Min,
+            ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other)
+        )
+        .is_ok());
+        assert!(set_thread_priority_and_policy(
+            thread_id,
+            ThreadPriority::Max,
+            ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other)
+        )
+        .is_ok());
+        assert!(set_thread_priority_and_policy(
+            thread_id,
+            ThreadPriority::Specific(0),
+            ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other)
+        )
+        .is_ok());
+    }
+
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn set_thread_priority_test() {
         let thread_id = thread_native_id();
