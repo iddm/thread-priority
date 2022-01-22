@@ -485,7 +485,7 @@ pub fn get_current_thread_priority() -> Result<ThreadPriority, Error> {
 /// ```
 pub trait ThreadExt {
     /// Gets the current thread's priority.
-    /// For more info read [`thread_priority`].
+    /// For more info read [`get_current_thread_priority`].
     ///
     /// ```rust
     /// use thread_priority::*;
