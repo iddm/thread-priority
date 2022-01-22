@@ -382,7 +382,7 @@ pub trait ThreadExt {
     /// assert!(std::thread::current().get_priority().is_ok());
     /// ```
     fn get_priority(&self) -> Result<ThreadPriority, Error> {
-        thread_priority()
+        get_current_thread_priority()
     }
 
     /// Sets current thread's priority.

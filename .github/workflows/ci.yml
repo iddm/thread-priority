@@ -3,7 +3,7 @@ name: CI
 on: [push, pull_request]
 
 env:
-  minrust: 1.36.0
+  minrust: 1.46.0
 
 jobs:
   test:
@@ -116,9 +116,7 @@ jobs:
             target
           key: ${{ runner.os }}-msrv-${{ steps.tc.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.toml') }}
 
-# Commented since it also checks for errors in the dependencies and I don't really need that.
-#      - run: cargo check --all-features
-      - run: cargo check
+      - run: cargo check --all-features
 
   doc:
     name: Build docs
