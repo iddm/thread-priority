@@ -27,8 +27,8 @@ jobs:
             toolchain: beta
           - name: nightly
             toolchain: nightly
-              #          - name: macOS
-              #            os: macOS-latest
+          - name: macOS
+            os: macOS-latest
           - name: Windows
             os: windows-latest
 
