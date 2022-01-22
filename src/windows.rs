@@ -213,9 +213,9 @@ pub fn set_current_thread_priority(priority: ThreadPriority) -> Result<(), Error
 /// # Usage
 ///
 /// ```rust
-/// use thread_priority::get_thread_priority;
+/// use thread_priority::{thread_native_id, get_thread_priority};
 ///
-/// assert!(get_priority().is_ok());
+/// assert!(get_thread_priority(thread_native_id()).is_ok());
 /// ```
 pub fn get_thread_priority(native: ThreadId) -> Result<ThreadPriority, Error> {
     use std::convert::TryFrom;
@@ -241,7 +241,7 @@ pub fn get_thread_priority(native: ThreadId) -> Result<ThreadPriority, Error> {
 /// ```rust
 /// use thread_priority::get_current_thread_priority;
 ///
-/// assert!(get_thread_priority().is_ok());
+/// assert!(get_current_thread_priority().is_ok());
 /// ```
 pub fn get_current_thread_priority() -> Result<ThreadPriority, Error> {
     use std::convert::TryFrom;

@@ -1,3 +1,5 @@
+#![cfg(not(windows))]
+
 use rstest::rstest;
 use thread_priority::*;
 
@@ -40,6 +42,7 @@ fn get_and_set_priority_with_normal_policy() {
     );
 }
 
+#[cfg(not(windows))]
 #[test]
 #[should_panic]
 fn get_and_set_priority_with_normal_policy_with_invalid_value() {
@@ -71,6 +74,7 @@ fn get_and_set_priority_with_normal_policy_with_invalid_value() {
     );
 }
 
+#[cfg(not(windows))]
 #[rstest]
 #[case::fifo(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo))]
 #[case::roundrobin(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin))]

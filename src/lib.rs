@@ -184,6 +184,14 @@ pub struct ThreadPriorityOsValue(u32);
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub enum ThreadPriority {
     /// Holds a value representing the minimum possible priority.
+    #[cfg_attr(
+    target_os = "windows",
+    doc = "\
+The `ThreadPriority::Min` value is mapped to `WinAPIThreadPriority::Lowest` and not
+`WinAPIThreadPriority::Idle` to avoid unexpected drawbacks. Use the specific value
+to set it to `WinAPIThreadPriority::Idle` when it is really needed.
+"
+    )]
     Min,
     /// Holds a platform-independent priority value.
     /// Usually used when setting a value, for sometimes it is not possible to map
@@ -191,6 +199,13 @@ pub enum ThreadPriority {
     Crossplatform(ThreadPriorityValue),
     /// Holds an operating system specific value. If it is not possible to obtain the
     /// [`ThreadPriority::Crossplatform`] variant of the value, this is returned instead.
+    #[cfg_attr(
+    target_os = "windows",
+    doc = "\
+The value is matched among possible values in Windows from `WinAPIThreadPriority::Idle` till 
+`WinAPIThreadPriority::TimeCritical`.
+"
+    )]
     Os(ThreadPriorityOsValue),
     /// Holds scheduling parameters for Deadline scheduling. These are, in order,
     /// the nanoseconds for runtime, deadline, and period. Please note that the
@@ -202,6 +217,14 @@ pub enum ThreadPriority {
     /// os where the program is going to be running on, how it will
     /// behave. On some systems, the whole system may become frozen
     /// if not used properly.
+    #[cfg_attr(
+    target_os = "windows",
+    doc = "\
+The `ThreadPriority::Max` value is mapped to `WinAPIThreadPriority::Highest` and not
+`WinAPIThreadPriority::TimeCritical` to avoid unexpected drawbacks. Use the specific value
+to set it to `WinAPIThreadPriority::TimeCritical` when it is really needed.
+"
+    )]
     Max,
 }
 

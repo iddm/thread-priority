@@ -1,32 +1,26 @@
+#![cfg(windows)]
 use rstest::rstest;
 use thread_priority::*;
+use std::convert::TryInto;
 
-// #[rstest]
-// #[case::fifo(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo))]
-// #[case::roundrobin(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin))]
-// fn get_and_set_priority_with_realtime_policy_requires_capabilities(
-//     #[case] realtime_policy: ThreadSchedulePolicy,
-// ) {
-//     use std::convert::TryInto;
+#[rstest]
+#[case(ThreadPriority::Min, ThreadPriority::Os(WinAPIThreadPriority::Lowest.try_into().unwrap()))]
+#[case(ThreadPriority::Crossplatform(23u8.try_into().unwrap()), ThreadPriority::Os(WinAPIThreadPriority::BelowNormal.try_into().unwrap()))]
+#[case(ThreadPriority::Max, ThreadPriority::Os(WinAPIThreadPriority::Highest.try_into().unwrap()))]
+fn get_and_set_priority_requires_capabilities(
+    #[case] input_priority: ThreadPriority,
+    #[case] expected_priority: ThreadPriority,
+) {
+    let thread_id = thread_native_id();
 
-//     let thread_id = thread_native_id();
-
-//     let set_result = set_winapi_thread_priority(thread_id, ThreadPriority::Max);
-//     let get_result = thread_priority(thread_id, ThreadPriority::Max);
-//     assert_eq!(
-//         ,
-//         Ok(())
-//     );
-//     assert_eq!(thread_schedule_policy(), Ok(realtime_policy));
-//     assert_eq!(
-//         thread_schedule_policy_param(thread_native_id()),
-//         Ok((realtime_policy, ScheduleParams { sched_priority: 99 }))
-//     );
-//     assert_eq!(
-//         Thread::current(),
-//         Ok(Thread {
-//             priority: ThreadPriority::Crossplatform(99u8.try_into().unwrap()),
-//             id: thread_native_id()
-//         })
-//     );
-// }
+    let set_result = set_thread_priority(thread_id, input_priority);
+    let get_result = get_thread_priority(thread_id);
+    assert_eq!(
+        set_result,
+        Ok(())
+    );
+    assert_eq!(
+        get_result,
+        Ok(expected_priority),
+    );
+}
