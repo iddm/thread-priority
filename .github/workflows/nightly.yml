@@ -45,7 +45,6 @@ jobs:
           override: true
 
       - name: Setup cache
-        if: runner.os != 'macOS'
         uses: actions/cache@v2
         with:
           path: |
