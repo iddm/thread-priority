@@ -318,7 +318,9 @@ pub fn set_current_thread_priority(priority: ThreadPriority) -> Result<(), Error
 /// ```
 pub fn thread_schedule_policy() -> Result<ThreadSchedulePolicy, Error> {
     #[cfg(not(target_os = "macos"))]
-    unsafe { ThreadSchedulePolicy::from_posix(libc::sched_getscheduler(libc::getpid())) }
+    unsafe {
+        ThreadSchedulePolicy::from_posix(libc::sched_getscheduler(libc::getpid()))
+    }
     #[cfg(target_os = "macos")]
     thread_schedule_policy_param(thread_native_id()).map(|policy| policy.0)
 }
@@ -559,18 +561,8 @@ mod tests {
         #[cfg(target_os = "macos")]
         let policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other);
 
-        assert!(set_thread_priority_and_policy(
-            thread_id,
-            ThreadPriority::Min,
-            policy,
-        )
-        .is_ok());
-        assert!(set_thread_priority_and_policy(
-            thread_id,
-            ThreadPriority::Max,
-            policy,
-        )
-        .is_ok());
+        assert!(set_thread_priority_and_policy(thread_id, ThreadPriority::Min, policy,).is_ok());
+        assert!(set_thread_priority_and_policy(thread_id, ThreadPriority::Max, policy,).is_ok());
         assert!(set_thread_priority_and_policy(
             thread_id,
             ThreadPriority::Crossplatform(ThreadPriorityValue(0)),
