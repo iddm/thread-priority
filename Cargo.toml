@@ -17,6 +17,7 @@ rstest = "0.12"
 [dependencies]
 log = "0.4"
 const_format = "0.2"
+cfg-if = "1"
 
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "dragonfly", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))'.dependencies]
 libc = "0.2"

@@ -513,14 +513,19 @@ pub trait ThreadExt {
     fn set_priority_and_policy(
         &self,
         policy: ThreadSchedulePolicy,
-        mut priority: ThreadPriority,
+        priority: ThreadPriority,
     ) -> Result<(), Error> {
-        #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
-        if policy == ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) {
-            priority = ThreadPriority::Crossplatform(ThreadPriorityValue(0));
+        cfg_if::cfg_if! {
+            if #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))] {
+                if policy == ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) {
+                    set_thread_priority_and_policy(thread_native_id(), ThreadPriority::Crossplatform(ThreadPriorityValue(0)), policy)
+                } else {
+                    set_thread_priority_and_policy(thread_native_id(), priority, policy)
+                }
+            } else {
+                set_thread_priority_and_policy(thread_native_id(), priority, policy)
+            }
         }
-
-        set_thread_priority_and_policy(thread_native_id(), priority, policy)
     }
 
     /// Returns native unix thread id.
