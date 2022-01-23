@@ -46,10 +46,8 @@ fn check_min_and_max_priority_values(
 ) {
     let max_value = ThreadPriority::max_value_for_policy(policy).unwrap();
     let min_value = ThreadPriority::min_value_for_policy(policy).unwrap();
-    assert!(max_value <= *posix_range.end());
-    assert!(max_value >= *posix_range.start());
-    assert!(min_value <= *posix_range.end());
-    assert!(min_value >= *posix_range.start());
+    assert!(posix_range.contains(&max_value));
+    assert!(posix_range.contains(&min_value));
 }
 
 #[rstest]
@@ -66,10 +64,8 @@ fn check_min_and_max_priority_values(
 
     let max_value = ThreadPriority::max_value_for_policy(policy).unwrap();
     let min_value = ThreadPriority::min_value_for_policy(policy).unwrap();
-    assert!(max_value <= *posix_range.end());
-    assert!(max_value >= *posix_range.start());
-    assert!(min_value <= *posix_range.end());
-    assert!(min_value >= *posix_range.start());
+    assert!(posix_range.contains(&max_value));
+    assert!(posix_range.contains(&min_value));
 }
 
 #[test]

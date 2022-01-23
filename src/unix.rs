@@ -201,7 +201,14 @@ impl ThreadPriority {
     pub fn max_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
         let max_priority = unsafe { libc::sched_get_priority_max(policy.to_posix()) };
         if max_priority < 0 {
-            unsafe { Err(Error::OS(*libc::__errno_location())) }
+            #[cfg(not(target_os = "macos"))]
+            unsafe {
+                Err(Error::OS(*libc::__errno_location()))
+            }
+            #[cfg(target_os = "macos")]
+            Err(Error::Priority(
+                "Couldn't get the minimum allowed value of priority for the specified policy",
+            ))
         } else {
             Ok(max_priority)
         }
@@ -212,7 +219,14 @@ impl ThreadPriority {
     pub fn min_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
         let min_priority = unsafe { libc::sched_get_priority_min(policy.to_posix()) };
         if min_priority < 0 {
-            unsafe { Err(Error::OS(*libc::__errno_location())) }
+            #[cfg(not(target_os = "macos"))]
+            unsafe {
+                Err(Error::OS(*libc::__errno_location()))
+            }
+            #[cfg(target_os = "macos")]
+            Err(Error::Priority(
+                "Couldn't get the minimum allowed value of priority for the specified policy",
+            ))
         } else {
             Ok(min_priority)
         }
