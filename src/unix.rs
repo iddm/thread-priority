@@ -315,6 +315,12 @@ impl ThreadPriority {
 ///                                        ThreadPriority::Min,
 ///                                        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo)).is_ok());
 /// ```
+///
+/// # Note
+///
+/// In case the value is specified as [`ThreadPriority::Crossplatform`] and is incompatible with the policy, an error is returned.
+/// However if [`ThreadPriority::Min`] or [`ThreadPriority::Max`] are used, the correct value is used automatically according
+/// to the range of the policy's allowed values.
 pub fn set_thread_priority_and_policy(
     native: ThreadId,
     priority: ThreadPriority,
