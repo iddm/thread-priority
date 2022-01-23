@@ -292,6 +292,25 @@ impl ThreadPriority {
     }
 }
 
+impl TryFrom<ThreadPriority> for ScheduleParams {
+    type Error = crate::Error;
+
+    fn try_from(value: ThreadPriority) -> Result<Self, Self::Error> {
+        Ok(ScheduleParams {
+            sched_priority: match value {
+                ThreadPriority::Max => MAX_PRIORITY,
+                ThreadPriority::Min => MIN_PRIORITY,
+                ThreadPriority::Crossplatform(ThreadPriorityValue(p)) => p as i32,
+                _ => {
+                    return Err(Error::Priority(
+                        "The specified thread priority can't be made into sched_param.",
+                    ))
+                }
+            },
+        })
+    }
+}
+
 /// Sets thread's priority and schedule policy
 ///
 /// * May require privileges
@@ -313,14 +332,52 @@ pub fn set_thread_priority_and_policy(
     priority: ThreadPriority,
     policy: ThreadSchedulePolicy,
 ) -> Result<(), Error> {
-    let params = ScheduleParams {
-        sched_priority: match policy {
-            #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
-            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => 0,
-            _ => priority.to_posix(policy)?,
-        },
-    };
-    set_thread_schedule_policy(native, policy, params, priority)
+    unsafe {
+        let ret = match policy {
+            // SCHED_DEADLINE policy requires its own syscall
+            #[cfg(target_os = "linux")]
+            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
+                let (runtime, deadline, period) = match priority {
+                    ThreadPriority::Deadline(r, d, p) => (r, d, p),
+                    _ => {
+                        return Err(Error::Priority(
+                            "Deadline policy given without deadline priority.",
+                        ))
+                    }
+                };
+                let tid = native as libc::pid_t;
+                let sched_attr = SchedAttr {
+                    size: std::mem::size_of::<SchedAttr>() as u32,
+                    sched_policy: policy.to_posix() as u32,
+
+                    sched_runtime: runtime as u64,
+                    sched_deadline: deadline as u64,
+                    sched_period: period as u64,
+
+                    ..Default::default()
+                };
+                libc::syscall(
+                    libc::SYS_sched_setattr,
+                    tid,
+                    &sched_attr as *const _,
+                    // we are not setting SCHED_FLAG_RECLAIM nor SCHED_FLAG_DL_OVERRUN
+                    0,
+                ) as i32
+            }
+            _ => {
+                let params = ScheduleParams::try_from(priority)?.into_posix();
+                libc::pthread_setschedparam(
+                    native,
+                    policy.to_posix(),
+                    &params as *const libc::sched_param,
+                )
+            }
+        };
+        match ret {
+            0 => Ok(()),
+            e => Err(Error::OS(e)),
+        }
+    }
 }
 
 /// Set current thread's priority.
@@ -355,76 +412,6 @@ pub fn set_current_thread_priority(priority: ThreadPriority) -> Result<(), Error
 /// ```
 pub fn thread_schedule_policy() -> Result<ThreadSchedulePolicy, Error> {
     thread_schedule_policy_param(thread_native_id()).map(|policy| policy.0)
-}
-
-/// Sets thread schedule policy.
-///
-/// * May require privileges
-/// * Deadline policy requires a tid, not a pthread_t, so invoking this while using a deadline
-/// policy will interpret the given [ThreadId](struct.ThreadId) as a pid_t (thread tid).
-///
-/// # Usage
-/// ```rust,no_run
-/// use thread_priority::*;
-///
-/// let thread_id = thread_native_id();
-/// let policy = ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo);
-/// let params = ScheduleParams { sched_priority: 3 as libc::c_int };
-/// let priority = ThreadPriority::Min;
-/// assert!(set_thread_schedule_policy(thread_id, policy, params, priority).is_ok());
-/// ```
-pub fn set_thread_schedule_policy(
-    native: ThreadId,
-    policy: ThreadSchedulePolicy,
-    params: ScheduleParams,
-    priority: ThreadPriority,
-) -> Result<(), Error> {
-    let params = params.into_posix();
-    unsafe {
-        let ret = match policy {
-            // SCHED_DEADLINE policy requires its own syscall
-            #[cfg(target_os = "linux")]
-            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
-                let (runtime, deadline, period) = match priority {
-                    ThreadPriority::Deadline(r, d, p) => (r, d, p),
-                    _ => {
-                        return Err(Error::Priority(
-                            "Deadline policy given without deadline priority.",
-                        ))
-                    }
-                };
-                let tid = native as libc::pid_t;
-                let sched_attr = SchedAttr {
-                    size: std::mem::size_of::<SchedAttr>() as u32,
-                    sched_policy: policy.to_posix() as u32,
-
-                    sched_runtime: runtime as u64,
-                    sched_deadline: deadline as u64,
-                    sched_period: period as u64,
-
-                    ..Default::default()
-                };
-                libc::syscall(
-                    libc::SYS_sched_setattr,
-                    tid,
-                    &sched_attr as *const _,
-                    // we are not setting SCHED_FLAG_RECLAIM nor SCHED_FLAG_DL_OVERRUN
-                    0,
-                ) as i32
-            }
-            _ => libc::pthread_setschedparam(
-                native,
-                policy.to_posix(),
-                &params as *const libc::sched_param,
-            ),
-        };
-        // This is just to silent the unused variable warning.
-        let _priority = priority;
-        match ret {
-            0 => Ok(()),
-            e => Err(Error::OS(e)),
-        }
-    }
 }
 
 /// Returns policy parameters (schedule policy and other schedule parameters)
@@ -522,20 +509,18 @@ pub trait ThreadExt {
     }
 
     /// Sets current thread's schedule policy.
-    /// For more info read [`set_thread_schedule_policy`].
-    fn set_schedule_policy(
+    /// For more info read [`set_thread_priority_and_policy`].
+    fn set_priority_and_policy(
         &self,
         policy: ThreadSchedulePolicy,
-        priority: ThreadPriority,
+        mut priority: ThreadPriority,
     ) -> Result<(), Error> {
-        let params = ScheduleParams {
-            sched_priority: match policy {
-                #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
-                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => 0,
-                _ => priority.to_posix(policy)?,
-            },
-        };
-        set_thread_schedule_policy(thread_native_id(), policy, params, priority)
+        #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+        if policy == ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) {
+            priority = ThreadPriority::Crossplatform(ThreadPriorityValue(0));
+        }
+
+        set_thread_priority_and_policy(thread_native_id(), priority, policy)
     }
 
     /// Returns native unix thread id.
