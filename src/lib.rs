@@ -187,9 +187,9 @@ pub enum ThreadPriority {
     #[cfg_attr(
         target_os = "windows",
         doc = "\
-The `ThreadPriority::Min` value is mapped to `WinAPIThreadPriority::Lowest` and not
-`WinAPIThreadPriority::Idle` to avoid unexpected drawbacks. Use the specific value
-to set it to `WinAPIThreadPriority::Idle` when it is really needed.
+The [`ThreadPriority::Min`] value is mapped to [`WinAPIThreadPriority::Lowest`] and not
+[`WinAPIThreadPriority::Idle`] to avoid unexpected drawbacks. Use the specific value
+to set it to [`WinAPIThreadPriority::Idle`] when it is really needed.
 "
     )]
     Min,
@@ -202,8 +202,10 @@ to set it to `WinAPIThreadPriority::Idle` when it is really needed.
     #[cfg_attr(
         target_os = "windows",
         doc = "\
-The value is matched among possible values in Windows from `WinAPIThreadPriority::Idle` till 
-`WinAPIThreadPriority::TimeCritical`.
+The value is matched among possible values in Windows from [`WinAPIThreadPriority::Idle`] till
+[`WinAPIThreadPriority::TimeCritical`]. This is due to windows only having from 7 to 9 possible
+thread priorities and not `100` as it is allowed to have in the [`ThreadPriority::Crossplatform`]
+variant.
 "
     )]
     Os(ThreadPriorityOsValue),
@@ -220,9 +222,9 @@ The value is matched among possible values in Windows from `WinAPIThreadPriority
     #[cfg_attr(
         target_os = "windows",
         doc = "\
-The `ThreadPriority::Max` value is mapped to `WinAPIThreadPriority::Highest` and not
-`WinAPIThreadPriority::TimeCritical` to avoid unexpected drawbacks. Use the specific value
-to set it to `WinAPIThreadPriority::TimeCritical` when it is really needed.
+The [`ThreadPriority::Max`] value is mapped to [`WinAPIThreadPriority::Highest`] and not
+[`WinAPIThreadPriority::TimeCritical`] to avoid unexpected drawbacks. Use the specific value
+to set it to [`WinAPIThreadPriority::TimeCritical`] when it is really needed.
 "
     )]
     Max,
