@@ -21,8 +21,6 @@ const SCHED_FIFO: i32 = 4;
 //  (SCHED_OTHER, SCHED_IDLE, SCHED_BATCH), sched_priority is not
 //  used in scheduling decisions (it must be specified as 0).
 // <https://man7.org/linux/man-pages/man7/sched.7.html>
-const MIN_PRIORITY: i32 = 1;
-const MAX_PRIORITY: i32 = 99;
 
 /// An alias type for a thread id.
 pub type ThreadId = libc::pthread_t;
@@ -301,25 +299,6 @@ impl ThreadPriority {
     }
 }
 
-impl TryFrom<ThreadPriority> for ScheduleParams {
-    type Error = crate::Error;
-
-    fn try_from(value: ThreadPriority) -> Result<Self, Self::Error> {
-        Ok(ScheduleParams {
-            sched_priority: match value {
-                ThreadPriority::Max => MAX_PRIORITY,
-                ThreadPriority::Min => MIN_PRIORITY,
-                ThreadPriority::Crossplatform(ThreadPriorityValue(p)) => p as i32,
-                _ => {
-                    return Err(Error::Priority(
-                        "The specified thread priority can't be made into sched_param.",
-                    ))
-                }
-            },
-        })
-    }
-}
-
 /// Sets thread's priority and schedule policy
 ///
 /// * May require privileges
@@ -341,30 +320,30 @@ pub fn set_thread_priority_and_policy(
     priority: ThreadPriority,
     policy: ThreadSchedulePolicy,
 ) -> Result<(), Error> {
-    unsafe {
-        let ret = match policy {
-            // SCHED_DEADLINE policy requires its own syscall
-            #[cfg(target_os = "linux")]
-            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
-                let (runtime, deadline, period) = match priority {
-                    ThreadPriority::Deadline(r, d, p) => (r, d, p),
-                    _ => {
-                        return Err(Error::Priority(
-                            "Deadline policy given without deadline priority.",
-                        ))
-                    }
-                };
-                let tid = native as libc::pid_t;
-                let sched_attr = SchedAttr {
-                    size: std::mem::size_of::<SchedAttr>() as u32,
-                    sched_policy: policy.to_posix() as u32,
+    let ret = match policy {
+        // SCHED_DEADLINE policy requires its own syscall
+        #[cfg(target_os = "linux")]
+        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
+            let (runtime, deadline, period) = match priority {
+                ThreadPriority::Deadline(r, d, p) => (r, d, p),
+                _ => {
+                    return Err(Error::Priority(
+                        "Deadline policy given without deadline priority.",
+                    ))
+                }
+            };
+            let tid = native as libc::pid_t;
+            let sched_attr = SchedAttr {
+                size: std::mem::size_of::<SchedAttr>() as u32,
+                sched_policy: policy.to_posix() as u32,
 
-                    sched_runtime: runtime as u64,
-                    sched_deadline: deadline as u64,
-                    sched_period: period as u64,
+                sched_runtime: runtime as u64,
+                sched_deadline: deadline as u64,
+                sched_period: period as u64,
 
-                    ..Default::default()
-                };
+                ..Default::default()
+            };
+            unsafe {
                 libc::syscall(
                     libc::SYS_sched_setattr,
                     tid,
@@ -373,19 +352,25 @@ pub fn set_thread_priority_and_policy(
                     0,
                 ) as i32
             }
-            _ => {
-                let params = ScheduleParams::try_from(priority)?.into_posix();
+        }
+        _ => {
+            let fixed_priority = priority.to_posix(policy)?;
+            let params = ScheduleParams {
+                sched_priority: fixed_priority,
+            }
+            .into_posix();
+            unsafe {
                 libc::pthread_setschedparam(
                     native,
                     policy.to_posix(),
                     &params as *const libc::sched_param,
                 )
             }
-        };
-        match ret {
-            0 => Ok(()),
-            e => Err(Error::OS(e)),
         }
+    };
+    match ret {
+        0 => Ok(()),
+        e => Err(Error::OS(e)),
     }
 }
 
