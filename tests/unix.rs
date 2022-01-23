@@ -1,45 +1,34 @@
 #![cfg(not(windows))]
 
 use rstest::rstest;
+use std::convert::TryInto;
 use thread_priority::*;
 
-#[test]
-fn get_and_set_priority_with_normal_policy() {
-    use std::convert::TryInto;
+#[rstest]
+#[cfg(not(target_os = "macos"))]
+fn get_and_set_priority_with_normal_policies(
+    #[values(
+        ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other),
+        ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal),
+        ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle),
+        ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch)
+    )]
+    policy: ThreadSchedulePolicy,
+    #[values(ThreadPriority::Min, ThreadPriority::Max, ThreadPriority::Crossplatform(23u8.try_into().unwrap()))]
+    priority: ThreadPriority,
+) {
+    assert!(set_thread_priority_and_policy(thread_native_id(), priority, policy,).is_err());
+}
 
-    let thread_id = thread_native_id();
-    #[cfg(not(target_os = "macos"))]
-    let normal_policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal);
-    #[cfg(target_os = "macos")]
-    let normal_policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other);
-
-    assert!(set_thread_priority_and_policy(thread_id, ThreadPriority::Min, normal_policy,).is_ok());
-    assert_eq!(thread_schedule_policy(), Ok(normal_policy));
-    assert_eq!(
-        thread_schedule_policy_param(thread_native_id()),
-        Ok((normal_policy, ScheduleParams { sched_priority: 0 }))
-    );
-    assert_eq!(
-        Thread::current(),
-        Ok(Thread {
-            priority: ThreadPriority::Crossplatform(0u8.try_into().unwrap()),
-            id: thread_native_id()
-        })
-    );
-
-    assert!(set_thread_priority_and_policy(thread_id, ThreadPriority::Max, normal_policy,).is_ok());
-    assert_eq!(thread_schedule_policy(), Ok(normal_policy));
-    assert_eq!(
-        thread_schedule_policy_param(thread_native_id()),
-        Ok((normal_policy, ScheduleParams { sched_priority: 0 }))
-    );
-    assert_eq!(
-        Thread::current(),
-        Ok(Thread {
-            priority: ThreadPriority::Crossplatform(0u8.try_into().unwrap()),
-            id: thread_native_id()
-        })
-    );
+#[rstest]
+#[cfg(target_os = "macos")]
+fn get_and_set_priority_with_normal_policies(
+    #[values(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other))]
+    policy: ThreadSchedulePolicy,
+    #[values(ThreadPriority::Min, ThreadPriority::Max, ThreadPriority::Crossplatform(23u8.try_into().unwrap()))]
+    priority: ThreadPriority,
+) {
+    assert!(set_thread_priority_and_policy(thread_native_id(), priority, policy,).is_err());
 }
 
 #[cfg(not(windows))]
@@ -54,12 +43,14 @@ fn get_and_set_priority_with_normal_policy_with_invalid_value() {
     #[cfg(target_os = "macos")]
     let normal_policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other);
 
-    assert!(set_thread_priority_and_policy(
-        thread_id,
-        ThreadPriority::Crossplatform(23u8.try_into().unwrap()),
-        normal_policy,
-    )
-    .is_ok());
+    assert_eq!(
+        set_thread_priority_and_policy(
+            thread_id,
+            ThreadPriority::Crossplatform(23u8.try_into().unwrap()),
+            normal_policy,
+        ),
+        Ok(())
+    );
     assert_eq!(thread_schedule_policy(), Ok(normal_policy));
     assert_eq!(
         thread_schedule_policy_param(thread_native_id()),
@@ -102,12 +93,14 @@ fn get_and_set_priority_with_realtime_policy_requires_capabilities(
         })
     );
 
-    assert!(set_thread_priority_and_policy(
-        thread_id,
-        ThreadPriority::Crossplatform(23u8.try_into().unwrap()),
-        realtime_policy,
-    )
-    .is_ok());
+    assert_eq!(
+        set_thread_priority_and_policy(
+            thread_id,
+            ThreadPriority::Crossplatform(23u8.try_into().unwrap()),
+            realtime_policy,
+        ),
+        Ok(())
+    );
     assert_eq!(thread_schedule_policy(), Ok(realtime_policy));
     assert_eq!(
         thread_schedule_policy_param(thread_native_id()),

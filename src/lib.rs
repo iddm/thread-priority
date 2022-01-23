@@ -93,7 +93,8 @@
     target_os = "dragonfly",
     target_os = "freebsd",
     target_os = "openbsd",
-    target_os = "netbsd"
+    target_os = "netbsd",
+    target_arch = "wasm32",
 ))]
 pub mod unix;
 #[cfg(any(
@@ -102,7 +103,8 @@ pub mod unix;
     target_os = "dragonfly",
     target_os = "freebsd",
     target_os = "openbsd",
-    target_os = "netbsd"
+    target_os = "netbsd",
+    target_arch = "wasm32",
 ))]
 pub use unix::*;
 
@@ -118,6 +120,8 @@ pub enum Error {
     Priority(&'static str),
     /// Target OS' error type. In most systems it is an integer which
     /// later should be used with target OS' API for understanding the value.
+    /// On Linux there is an integer containing an error code from errno.
+    /// For Windows it contains a number used in Windows for the same purpose.
     OS(i32),
     /// FFI failure.
     Ffi(&'static str),

@@ -89,7 +89,7 @@ pub enum RealtimeThreadSchedulePolicy {
     /// A deadline policy. Note, due to Linux expecting a pid_t and not a pthread_t, the given
     /// [ThreadId](struct.ThreadId) will be interpreted as a pid_t. This policy is NOT
     /// POSIX-compatible, so we only include it for linux targets.
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
     Deadline,
 }
 
@@ -98,7 +98,7 @@ impl RealtimeThreadSchedulePolicy {
         match self {
             RealtimeThreadSchedulePolicy::Fifo => SCHED_FIFO,
             RealtimeThreadSchedulePolicy::RoundRobin => 2,
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
             RealtimeThreadSchedulePolicy::Deadline => 6,
         }
     }
@@ -108,12 +108,15 @@ impl RealtimeThreadSchedulePolicy {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum NormalThreadSchedulePolicy {
     /// For running very low priority background jobs
+    #[cfg(not(target_os = "macos"))]
     Idle,
     /// For "batch" style execution of processes
+    #[cfg(not(target_os = "macos"))]
     Batch,
     /// The standard round-robin time-sharing policy
     Other,
     /// The standard round-robin time-sharing policy
+    #[cfg(not(target_os = "macos"))]
     Normal,
 }
 impl NormalThreadSchedulePolicy {
@@ -130,7 +133,6 @@ impl NormalThreadSchedulePolicy {
     fn to_posix(self) -> libc::c_int {
         match self {
             NormalThreadSchedulePolicy::Other => 1,
-            _ => panic!("Invalid value for berkley schedule policy."),
         }
     }
 }
@@ -169,7 +171,7 @@ impl ThreadSchedulePolicy {
             2 => Ok(ThreadSchedulePolicy::Realtime(
                 RealtimeThreadSchedulePolicy::RoundRobin,
             )),
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
             6 => Ok(ThreadSchedulePolicy::Realtime(
                 RealtimeThreadSchedulePolicy::Deadline,
             )),
@@ -203,16 +205,19 @@ impl ThreadPriority {
         let ret = match self {
             ThreadPriority::Min => match policy {
                 // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
                 ThreadSchedulePolicy::Realtime(_) => Ok(MIN_PRIORITY as u32),
-                _ => Ok(NORMAL_PRIORITY as u32),
+                _ => Err(Error::Priority(concatcp!(
+                    "The non-realtime schedule policies can't have priority higher than ",
+                    NORMAL_PRIORITY
+                ))),
             },
             ThreadPriority::Crossplatform(ThreadPriorityValue(p)) => match policy {
                 // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
@@ -235,7 +240,7 @@ impl ThreadPriority {
             // TODO avoid code duplication.
             ThreadPriority::Os(crate::ThreadPriorityOsValue(p)) => match policy {
                 // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
@@ -261,14 +266,17 @@ impl ThreadPriority {
             },
             ThreadPriority::Max => match policy {
                 // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
                 ThreadSchedulePolicy::Realtime(_) => Ok(MAX_PRIORITY as u32),
-                _ => Ok(NORMAL_PRIORITY as u32),
+                _ => Err(Error::Priority(concatcp!(
+                    "The non-realtime schedule policies can't have priority higher than ",
+                    NORMAL_PRIORITY
+                ))),
             },
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
             ThreadPriority::Deadline(_, _, _) => Err(Error::Priority(
                 "Deadline is non-POSIX and cannot be converted.",
             )),
@@ -292,32 +300,14 @@ impl ThreadPriority {
 ///
 /// Setting thread priority to minimum with normal schedule policy:
 ///
-#[cfg_attr(
-    target_os = "macos",
-    doc = "\
-```rust
-use thread_priority::*;
-
-let thread_id = thread_native_id();
-assert!(set_thread_priority_and_policy(thread_id,
-                                       ThreadPriority::Min,
-                                       ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other)).is_ok());
-```
-"
-)]
-#[cfg_attr(
-    not(target_os = "macos"),
-    doc = "\
-```rust
-use thread_priority::*;
-
-let thread_id = thread_native_id();
-assert!(set_thread_priority_and_policy(thread_id,
-                                       ThreadPriority::Min,
-                                       ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal)).is_ok());
-```
-"
-)]
+/// ```rust
+/// use thread_priority::*;
+///
+/// let thread_id = thread_native_id();
+/// assert!(set_thread_priority_and_policy(thread_id,
+///                                        ThreadPriority::Min,
+///                                        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo)).is_ok());
+/// ```
 pub fn set_thread_priority_and_policy(
     native: ThreadId,
     priority: ThreadPriority,
@@ -325,7 +315,7 @@ pub fn set_thread_priority_and_policy(
 ) -> Result<(), Error> {
     let params = ScheduleParams {
         sched_priority: match policy {
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
             ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => 0,
             _ => priority.to_posix(policy)?,
         },
@@ -334,12 +324,23 @@ pub fn set_thread_priority_and_policy(
 }
 
 /// Set current thread's priority.
+/// To make the priority of use, the scheduling policy is determined from the value.
+/// If the value is not equal to `ThreadPriority::Crossplatform(0)`, then the one of
+/// the available real-time policies is used. Otherwise, the function does nothing,
+/// as the only reasonable outcome with zero-priority set would be to change a scheduling
+/// policy, for which there is [`set_thread_priority_and_policy`].
+///
+/// * May require privileges
+///
+/// ```rust
+/// use thread_priority::*;
+///
+/// let thread_id = thread_native_id();
+/// assert!(set_current_thread_priority(ThreadPriority::Min).is_ok());
+/// ```
 pub fn set_current_thread_priority(priority: ThreadPriority) -> Result<(), Error> {
     let thread_id = thread_native_id();
-    #[cfg(target_os = "macos")]
-    let policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other);
-    #[cfg(not(target_os = "macos"))]
-    let policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal);
+    let policy = ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo);
     set_thread_priority_and_policy(thread_id, priority, policy)
 }
 
@@ -529,7 +530,7 @@ pub trait ThreadExt {
     ) -> Result<(), Error> {
         let params = ScheduleParams {
             sched_priority: match policy {
-                #[cfg(not(target_os = "macos"))]
+                #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => 0,
                 _ => priority.to_posix(policy)?,
             },
@@ -588,24 +589,6 @@ mod tests {
         let thread_id = thread_native_id();
 
         assert!(thread_schedule_policy_param(thread_id).is_ok());
-    }
-
-    #[test]
-    fn set_thread_priority_test() {
-        let thread_id = thread_native_id();
-        #[cfg(not(target_os = "macos"))]
-        let policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal);
-        #[cfg(target_os = "macos")]
-        let policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other);
-
-        assert!(set_thread_priority_and_policy(thread_id, ThreadPriority::Min, policy,).is_ok());
-        assert!(set_thread_priority_and_policy(thread_id, ThreadPriority::Max, policy,).is_ok());
-        assert!(set_thread_priority_and_policy(
-            thread_id,
-            ThreadPriority::Crossplatform(ThreadPriorityValue(0)),
-            policy,
-        )
-        .is_ok());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "thread-priority"
-version = "0.6.1"
+version = "0.7.0"
 authors = ["Victor Polevoy <fx@thefx.co>"]
 description = "Library for managing threads priority and schedule policies"
 repository = "https://github.com/vityafx/thread-priority"
