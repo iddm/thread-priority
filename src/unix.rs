@@ -199,13 +199,9 @@ impl ThreadPriority {
     /// Returns the maximum allowed value for using with the provided policy.
     /// The returned number is in the range of allowed values.
     pub fn max_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
-        let max_priority = unsafe {
-            libc::sched_get_priority_max(policy.to_posix())
-        };
+        let max_priority = unsafe { libc::sched_get_priority_max(policy.to_posix()) };
         if max_priority < 0 {
-            unsafe {
-                Err(Error::OS(*libc::__errno_location()))
-            }
+            unsafe { Err(Error::OS(*libc::__errno_location())) }
         } else {
             Ok(max_priority)
         }
@@ -214,20 +210,19 @@ impl ThreadPriority {
     /// Returns the minimum allowed value for using with the provided policy.
     /// The returned number is in the range of allowed values.
     pub fn min_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
-        let min_priority = unsafe {
-            libc::sched_get_priority_min(policy.to_posix())
-        };
+        let min_priority = unsafe { libc::sched_get_priority_min(policy.to_posix()) };
         if min_priority < 0 {
-            unsafe {
-                Err(Error::OS(*libc::__errno_location()))
-            }
+            unsafe { Err(Error::OS(*libc::__errno_location())) }
         } else {
             Ok(min_priority)
         }
     }
 
     /// Checks that the passed priority value is within the range of allowed values for using with the provided policy.
-    pub fn to_allowed_value_for_policy(priority: libc::c_int, policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
+    pub fn to_allowed_value_for_policy(
+        priority: libc::c_int,
+        policy: ThreadSchedulePolicy,
+    ) -> Result<libc::c_int, Error> {
         let min_priority = Self::min_value_for_policy(policy)?;
         let max_priority = Self::max_value_for_policy(policy)?;
         let allowed_range = min_priority..=max_priority;
@@ -257,7 +252,7 @@ impl ThreadPriority {
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
-                _ => Self::to_allowed_value_for_policy(p as i32, policy).map(|v| v as u32)
+                _ => Self::to_allowed_value_for_policy(p as i32, policy).map(|v| v as u32),
             },
             // TODO avoid code duplication.
             ThreadPriority::Os(crate::ThreadPriorityOsValue(p)) => match policy {
@@ -266,7 +261,7 @@ impl ThreadPriority {
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
-                _ => Self::to_allowed_value_for_policy(p as i32, policy).map(|v| v as u32)
+                _ => Self::to_allowed_value_for_policy(p as i32, policy).map(|v| v as u32),
             },
             ThreadPriority::Max => match policy {
                 // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
