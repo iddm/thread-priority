@@ -117,12 +117,12 @@ fn get_and_set_priority_with_normal_policy() {
     assert_eq!(thread_schedule_policy(), Ok(normal_policy));
     assert_eq!(
         thread_schedule_policy_param(thread_native_id()),
-        Ok((normal_policy, ScheduleParams { sched_priority: 0 }))
+        Ok((normal_policy, ScheduleParams { sched_priority: 23 }))
     );
     assert_eq!(
         Thread::current(),
         Ok(Thread {
-            priority: ThreadPriority::Crossplatform(0u8.try_into().unwrap()),
+            priority: ThreadPriority::Crossplatform(23u8.try_into().unwrap()),
             id: thread_native_id()
         })
     );
