@@ -114,10 +114,14 @@ pub mod windows;
 pub use windows::*;
 
 /// A error type
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Error {
     /// A value which describes why it is impossible to use such a priority.
     Priority(&'static str),
+    /// Indicates that the priority isn't in range and it should be within the provided range.
+    /// This may happen on different operating systems following a single standard of API but
+    /// allowing different priority values for different scheduling policies.
+    PriorityNotInRange(std::ops::RangeInclusive<i32>),
     /// Target OS' error type. In most systems it is an integer which
     /// later should be used with target OS' API for understanding the value.
     /// On Linux there is an integer containing an error code from errno.

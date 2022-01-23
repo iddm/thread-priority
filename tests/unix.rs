@@ -28,10 +28,50 @@ fn get_and_set_priority_with_normal_policies(
     #[values(ThreadPriority::Min, ThreadPriority::Max, ThreadPriority::Crossplatform(23u8.try_into().unwrap()))]
     priority: ThreadPriority,
 ) {
-    assert!(set_thread_priority_and_policy(thread_native_id(), priority, policy,).is_err());
+    // In macOS it is allowed to specify number as a SCHED_OTHER policy priority.
+    assert!(set_thread_priority_and_policy(thread_native_id(), priority, policy,).is_ok());
 }
 
-#[cfg(not(windows))]
+#[rstest]
+#[cfg(not(target_os = "macos"))]
+#[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal), 0..=0)]
+#[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle), 0..=0)]
+#[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch), 0..=0)]
+#[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other), 0..=0)]
+#[case(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo), 0..=99)]
+#[case(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin), 0..=99)]
+fn check_min_and_max_priority_values(
+    #[case] policy: ThreadSchedulePolicy,
+    #[case] posix_range: std::ops::RangeInclusive<i32>,
+) {
+    let max_value = ThreadPriority::max_value_for_policy(policy).unwrap();
+    let min_value = ThreadPriority::min_value_for_policy(policy).unwrap();
+    assert!(max_value <= *posix_range.end());
+    assert!(max_value >= *posix_range.start());
+    assert!(min_value <= *posix_range.end());
+    assert!(min_value >= *posix_range.start());
+}
+
+#[rstest]
+#[cfg(target_os = "macos")]
+fn check_min_and_max_priority_values(
+    #[values(
+        ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other),
+        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo),
+        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin)
+    )]
+    policy: ThreadSchedulePolicy,
+) {
+    let posix_range = 0..=99;
+
+    let max_value = ThreadPriority::max_value_for_policy(policy).unwrap();
+    let min_value = ThreadPriority::min_value_for_policy(policy).unwrap();
+    assert!(max_value <= *posix_range.end());
+    assert!(max_value >= *posix_range.start());
+    assert!(min_value <= *posix_range.end());
+    assert!(min_value >= *posix_range.start());
+}
+
 #[test]
 #[should_panic]
 fn get_and_set_priority_with_normal_policy_with_invalid_value() {
@@ -65,7 +105,6 @@ fn get_and_set_priority_with_normal_policy_with_invalid_value() {
     );
 }
 
-#[cfg(not(windows))]
 #[rstest]
 #[case::fifo(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo))]
 #[case::roundrobin(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin))]
