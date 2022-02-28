@@ -225,13 +225,13 @@ variant.
     /// kernel enforces runtime <= deadline <= period.
     /// 
     ///   arrival/wakeup                    absolute deadline
-    //         |    start time                    |
-    //         |        |                         |
-    //         v        v                         v
-    //    -----x--------xooooooooooooooooo--------x--------x---
-    //                  |<-- Runtime ------->|
-    //         |<----------- Deadline ----------->|
-    //         |<-------------- Period ------------------->|
+    ///        |    start time                    |
+    ///        |        |                         |
+    ///        v        v                         v
+    ///   -----x--------xooooooooooooooooo--------x--------x---
+    ///                 |<-- Runtime ------->|
+    ///        |<----------- Deadline ----------->|
+    ///        |<-------------- Period ------------------->|
     #[cfg(target_os = "linux")]
     Deadline {
         /// Set this to something larger than the average computation time
