@@ -97,6 +97,9 @@
     target_arch = "wasm32",
 ))]
 pub mod unix;
+#[cfg(target_os = "linux")]
+use std::time::Duration;
+
 #[cfg(any(
     target_os = "linux",
     target_os = "macos",
@@ -220,8 +223,25 @@ variant.
     /// Holds scheduling parameters for Deadline scheduling. These are, in order,
     /// the nanoseconds for runtime, deadline, and period. Please note that the
     /// kernel enforces runtime <= deadline <= period.
+    ///
+    ///   arrival/wakeup                    absolute deadline
+    ///        |    start time                    |
+    ///        |        |                         |
+    ///        v        v                         v
+    ///   -----x--------xooooooooooooooooo--------x--------x---
+    ///                 |<-- Runtime ------->|
+    ///        |<----------- Deadline ----------->|
+    ///        |<-------------- Period ------------------->|
     #[cfg(target_os = "linux")]
-    Deadline(u64, u64, u64),
+    Deadline {
+        /// Set this to something larger than the average computation time
+        /// or to the worst-case computation time for hard real-time tasks.
+        runtime: Duration,
+        /// Set this to the relative deadline.
+        deadline: Duration,
+        /// Set this to the period of the task.
+        period: Duration,
+    },
     /// Holds a value representing the maximum possible priority.
     /// Should be used with caution, it solely depends on the target
     /// os where the program is going to be running on, how it will
