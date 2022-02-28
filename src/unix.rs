@@ -331,7 +331,11 @@ pub fn set_thread_priority_and_policy(
         #[cfg(target_os = "linux")]
         ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
             let (runtime, deadline, period) = match priority {
-                ThreadPriority::Deadline(r, d, p) => (r, d, p),
+                ThreadPriority::Deadline { runtime, deadline, period } => (|| Ok((
+                    runtime.as_nanos().try_into()?,
+                    deadline.as_nanos().try_into()?,
+                    period.as_nanos().try_into()?,
+                )))().map_err(|e| Error::Priority("Deadline policy durations don't fit into a `u64`."))?,
                 _ => {
                     return Err(Error::Priority(
                         "Deadline policy given without deadline priority.",
@@ -343,9 +347,9 @@ pub fn set_thread_priority_and_policy(
                 size: std::mem::size_of::<SchedAttr>() as u32,
                 sched_policy: policy.to_posix() as u32,
 
-                sched_runtime: runtime as u64,
-                sched_deadline: deadline as u64,
-                sched_period: period as u64,
+                sched_runtime: runtime,
+                sched_deadline: deadline,
+                sched_period: period,
 
                 ..Default::default()
             };
@@ -586,10 +590,15 @@ mod tests {
     fn set_deadline_policy() {
         // allow the identity operation for clarity
         #![allow(clippy::identity_op)]
+        use std::time::Duration;
 
         assert!(set_thread_priority_and_policy(
             0, // current thread
-            ThreadPriority::Deadline(1 * 10_u64.pow(6), 10 * 10_u64.pow(6), 100 * 10_u64.pow(6)),
+            ThreadPriority::Deadline {
+                runtime: Duration::from_millis(1),
+                deadline: Duration::from_millis(10),
+                period: Duration::from_millis(100),
+            },
             ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline)
         )
         .is_ok());

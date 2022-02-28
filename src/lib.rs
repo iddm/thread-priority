@@ -97,6 +97,9 @@
     target_arch = "wasm32",
 ))]
 pub mod unix;
+#[cfg(target_os = "linux")]
+use std::time::Duration;
+
 #[cfg(any(
     target_os = "linux",
     target_os = "macos",
@@ -221,7 +224,11 @@ variant.
     /// the nanoseconds for runtime, deadline, and period. Please note that the
     /// kernel enforces runtime <= deadline <= period.
     #[cfg(target_os = "linux")]
-    Deadline(u64, u64, u64),
+    Deadline {
+        runtime: Duration,
+        deadline: Duration,
+        period: Duration,
+    },
     /// Holds a value representing the maximum possible priority.
     /// Should be used with caution, it solely depends on the target
     /// os where the program is going to be running on, how it will
