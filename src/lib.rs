@@ -223,7 +223,7 @@ variant.
     /// Holds scheduling parameters for Deadline scheduling. These are, in order,
     /// the nanoseconds for runtime, deadline, and period. Please note that the
     /// kernel enforces runtime <= deadline <= period.
-    /// 
+    ///
     ///   arrival/wakeup                    absolute deadline
     ///        |    start time                    |
     ///        |        |                         |

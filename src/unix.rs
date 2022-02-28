@@ -284,7 +284,11 @@ impl ThreadPriority {
                 _ => Self::max_value_for_policy(policy).map(|v| v as u32),
             },
             #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
-            ThreadPriority::Deadline { runtime: _, deadline: _, period: _ } => Err(Error::Priority(
+            ThreadPriority::Deadline {
+                runtime: _,
+                deadline: _,
+                period: _,
+            } => Err(Error::Priority(
                 "Deadline is non-POSIX and cannot be converted.",
             )),
         };
@@ -332,11 +336,20 @@ pub fn set_thread_priority_and_policy(
         ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
             use std::convert::TryInto as _;
             let (runtime, deadline, period) = match priority {
-                ThreadPriority::Deadline { runtime, deadline, period } => (|| Ok((
-                    runtime.as_nanos().try_into()?,
-                    deadline.as_nanos().try_into()?,
-                    period.as_nanos().try_into()?,
-                )))().map_err(|_: std::num::TryFromIntError| Error::Priority("Deadline policy durations don't fit into a `u64`."))?,
+                ThreadPriority::Deadline {
+                    runtime,
+                    deadline,
+                    period,
+                } => (|| {
+                    Ok((
+                        runtime.as_nanos().try_into()?,
+                        deadline.as_nanos().try_into()?,
+                        period.as_nanos().try_into()?,
+                    ))
+                })()
+                .map_err(|_: std::num::TryFromIntError| {
+                    Error::Priority("Deadline policy durations don't fit into a `u64`.")
+                })?,
                 _ => {
                     return Err(Error::Priority(
                         "Deadline policy given without deadline priority.",
