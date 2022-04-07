@@ -32,6 +32,22 @@ pub struct ScheduleParams {
     pub sched_priority: libc::c_int,
 }
 
+fn errno() -> libc::c_int {
+    unsafe {
+        cfg_if::cfg_if! {
+            if #[cfg(any(target_os = "openbsd", target_os = "freebsd", target_os = "netbsd"))] {
+                *libc::__errno()
+            } else if #[cfg(target_os = "linux")] {
+                *libc::__errno_location()
+            } else if #[cfg(target_os = "macos")] {
+                *libc::__error()
+            } else {
+                compile_error!("Your OS is probably not supported.")
+            }
+        }
+    }
+}
+
 /// Copy of the Linux kernel's sched_attr type
 #[repr(C)]
 #[derive(Debug, Default)]
@@ -199,14 +215,7 @@ impl ThreadPriority {
     pub fn max_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
         let max_priority = unsafe { libc::sched_get_priority_max(policy.to_posix()) };
         if max_priority < 0 {
-            #[cfg(not(target_os = "macos"))]
-            unsafe {
-                Err(Error::OS(*libc::__errno_location()))
-            }
-            #[cfg(target_os = "macos")]
-            Err(Error::Priority(
-                "Couldn't get the minimum allowed value of priority for the specified policy",
-            ))
+            Err(Error::OS(errno()))
         } else {
             Ok(max_priority)
         }
@@ -217,14 +226,7 @@ impl ThreadPriority {
     pub fn min_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
         let min_priority = unsafe { libc::sched_get_priority_min(policy.to_posix()) };
         if min_priority < 0 {
-            #[cfg(not(target_os = "macos"))]
-            unsafe {
-                Err(Error::OS(*libc::__errno_location()))
-            }
-            #[cfg(target_os = "macos")]
-            Err(Error::Priority(
-                "Couldn't get the minimum allowed value of priority for the specified policy",
-            ))
+            Err(Error::OS(errno()))
         } else {
             Ok(min_priority)
         }
