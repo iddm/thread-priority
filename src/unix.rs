@@ -35,11 +35,11 @@ pub struct ScheduleParams {
 fn errno() -> libc::c_int {
     unsafe {
         cfg_if::cfg_if! {
-            if #[cfg(any(target_os = "openbsd", target_os = "freebsd", target_os = "netbsd"))] {
+            if #[cfg(any(target_os = "openbsd", target_os = "netbsd"))] {
                 *libc::__errno()
             } else if #[cfg(target_os = "linux")] {
                 *libc::__errno_location()
-            } else if #[cfg(target_os = "macos")] {
+            } else if #[cfg(any(target_os = "macos", target_os = "freebsd"))] {
                 *libc::__error()
             } else {
                 compile_error!("Your OS is probably not supported.")
