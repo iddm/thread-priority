@@ -9,7 +9,6 @@ use thread_priority::*;
 fn get_and_set_priority_with_normal_policies(
     #[values(
         ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other),
-        ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal),
         ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle),
         ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch)
     )]
@@ -40,7 +39,6 @@ fn get_and_set_priority_with_normal_policies(
 
 #[cfg(not(target_os = "macos"))]
 #[rstest]
-#[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal), 0..=0)]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle), 0..=0)]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch), 0..=0)]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other), 0..=0)]
@@ -76,7 +74,6 @@ fn check_min_and_max_priority_values(
 
 #[cfg(not(target_os = "macos"))]
 #[rstest]
-#[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Normal))]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle))]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch))]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other))]

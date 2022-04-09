@@ -118,30 +118,21 @@ impl RealtimeThreadSchedulePolicy {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum NormalThreadSchedulePolicy {
     /// For running very low priority background jobs
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     Idle,
     /// For "batch" style execution of processes
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     Batch,
     /// The standard round-robin time-sharing policy
     Other,
-    /// The standard round-robin time-sharing policy
-    #[cfg(not(target_os = "macos"))]
-    Normal,
 }
 impl NormalThreadSchedulePolicy {
-    #[cfg(not(target_os = "macos"))]
     fn to_posix(self) -> libc::c_int {
         match self {
+            #[cfg(target_os = "linux")]
             NormalThreadSchedulePolicy::Idle => SCHED_IDLE,
+            #[cfg(target_os = "linux")]
             NormalThreadSchedulePolicy::Batch => SCHED_BATCH,
-            NormalThreadSchedulePolicy::Other | NormalThreadSchedulePolicy::Normal => SCHED_OTHER,
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    fn to_posix(self) -> libc::c_int {
-        match self {
             NormalThreadSchedulePolicy::Other => SCHED_OTHER,
         }
     }
@@ -163,15 +154,16 @@ impl ThreadSchedulePolicy {
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
     fn from_posix(policy: libc::c_int) -> Result<ThreadSchedulePolicy, Error> {
         match policy {
             SCHED_OTHER => Ok(ThreadSchedulePolicy::Normal(
-                NormalThreadSchedulePolicy::Normal,
+                NormalThreadSchedulePolicy::Other,
             )),
+            #[cfg(target_os = "linux")]
             SCHED_BATCH => Ok(ThreadSchedulePolicy::Normal(
                 NormalThreadSchedulePolicy::Batch,
             )),
+            #[cfg(target_os = "linux")]
             SCHED_IDLE => Ok(ThreadSchedulePolicy::Normal(
                 NormalThreadSchedulePolicy::Idle,
             )),
@@ -186,24 +178,6 @@ impl ThreadSchedulePolicy {
                 RealtimeThreadSchedulePolicy::Deadline,
             )),
             _ => Err(Error::Ffi("Can't parse schedule policy from posix")),
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    fn from_posix(policy: libc::c_int) -> Result<ThreadSchedulePolicy, Error> {
-        match policy {
-            SCHED_OTHER => Ok(ThreadSchedulePolicy::Normal(
-                NormalThreadSchedulePolicy::Other,
-            )),
-            SCHED_FIFO => Ok(ThreadSchedulePolicy::Realtime(
-                RealtimeThreadSchedulePolicy::Fifo,
-            )),
-            SCHED_RR => Ok(ThreadSchedulePolicy::Realtime(
-                RealtimeThreadSchedulePolicy::RoundRobin,
-            )),
-            _ => Err(Error::Ffi(
-                "Can't parse schedule policy from berkley values",
-            )),
         }
     }
 }
