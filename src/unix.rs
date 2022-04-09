@@ -6,9 +6,9 @@
 
 use std::convert::TryFrom;
 
-use libc::{SCHED_RR, SCHED_FIFO, SCHED_OTHER};
 #[cfg(target_os = "linux")]
 use libc::{SCHED_BATCH, SCHED_IDLE};
+use libc::{SCHED_FIFO, SCHED_OTHER, SCHED_RR};
 
 use crate::{Error, ThreadPriority, ThreadPriorityValue};
 use std::mem::MaybeUninit;
