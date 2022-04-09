@@ -6,13 +6,12 @@
 
 use std::convert::TryFrom;
 
+use libc::{SCHED_RR, SCHED_FIFO, SCHED_OTHER};
+#[cfg(target_os = "linux")]
+use libc::{SCHED_BATCH, SCHED_IDLE};
+
 use crate::{Error, ThreadPriority, ThreadPriorityValue};
 use std::mem::MaybeUninit;
-
-#[cfg(not(target_os = "macos"))]
-const SCHED_FIFO: i32 = 1;
-#[cfg(target_os = "macos")]
-const SCHED_FIFO: i32 = 4;
 
 // Processes scheduled under one of the real-time policies
 // (SCHED_FIFO, SCHED_RR) have a sched_priority value in the range 1
@@ -108,7 +107,7 @@ impl RealtimeThreadSchedulePolicy {
     fn to_posix(self) -> libc::c_int {
         match self {
             RealtimeThreadSchedulePolicy::Fifo => SCHED_FIFO,
-            RealtimeThreadSchedulePolicy::RoundRobin => 2,
+            RealtimeThreadSchedulePolicy::RoundRobin => SCHED_RR,
             #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
             RealtimeThreadSchedulePolicy::Deadline => 6,
         }
@@ -134,16 +133,16 @@ impl NormalThreadSchedulePolicy {
     #[cfg(not(target_os = "macos"))]
     fn to_posix(self) -> libc::c_int {
         match self {
-            NormalThreadSchedulePolicy::Idle => 5,
-            NormalThreadSchedulePolicy::Batch => 3,
-            NormalThreadSchedulePolicy::Other | NormalThreadSchedulePolicy::Normal => 0,
+            NormalThreadSchedulePolicy::Idle => SCHED_IDLE,
+            NormalThreadSchedulePolicy::Batch => SCHED_BATCH,
+            NormalThreadSchedulePolicy::Other | NormalThreadSchedulePolicy::Normal => SCHED_OTHER,
         }
     }
 
     #[cfg(target_os = "macos")]
     fn to_posix(self) -> libc::c_int {
         match self {
-            NormalThreadSchedulePolicy::Other => 1,
+            NormalThreadSchedulePolicy::Other => SCHED_OTHER,
         }
     }
 }
@@ -167,19 +166,19 @@ impl ThreadSchedulePolicy {
     #[cfg(not(target_os = "macos"))]
     fn from_posix(policy: libc::c_int) -> Result<ThreadSchedulePolicy, Error> {
         match policy {
-            0 => Ok(ThreadSchedulePolicy::Normal(
+            SCHED_OTHER => Ok(ThreadSchedulePolicy::Normal(
                 NormalThreadSchedulePolicy::Normal,
             )),
-            3 => Ok(ThreadSchedulePolicy::Normal(
+            SCHED_BATCH => Ok(ThreadSchedulePolicy::Normal(
                 NormalThreadSchedulePolicy::Batch,
             )),
-            5 => Ok(ThreadSchedulePolicy::Normal(
+            SCHED_IDLE => Ok(ThreadSchedulePolicy::Normal(
                 NormalThreadSchedulePolicy::Idle,
             )),
             SCHED_FIFO => Ok(ThreadSchedulePolicy::Realtime(
                 RealtimeThreadSchedulePolicy::Fifo,
             )),
-            2 => Ok(ThreadSchedulePolicy::Realtime(
+            SCHED_RR => Ok(ThreadSchedulePolicy::Realtime(
                 RealtimeThreadSchedulePolicy::RoundRobin,
             )),
             #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
@@ -193,13 +192,13 @@ impl ThreadSchedulePolicy {
     #[cfg(target_os = "macos")]
     fn from_posix(policy: libc::c_int) -> Result<ThreadSchedulePolicy, Error> {
         match policy {
-            1 => Ok(ThreadSchedulePolicy::Normal(
+            SCHED_OTHER => Ok(ThreadSchedulePolicy::Normal(
                 NormalThreadSchedulePolicy::Other,
             )),
             SCHED_FIFO => Ok(ThreadSchedulePolicy::Realtime(
                 RealtimeThreadSchedulePolicy::Fifo,
             )),
-            2 => Ok(ThreadSchedulePolicy::Realtime(
+            SCHED_RR => Ok(ThreadSchedulePolicy::Realtime(
                 RealtimeThreadSchedulePolicy::RoundRobin,
             )),
             _ => Err(Error::Ffi(
