@@ -42,9 +42,9 @@ fn get_and_set_priority_with_normal_policies(
 }
 
 #[rstest]
-#[cfg(linux)]
+#[cfg(target_os = "linux")]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle), 0..=0)]
-#[cfg(linux)]
+#[cfg(target_os = "linux")]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch), 0..=0)]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other), 0..=0)]
 #[case(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo), 0..=99)]
@@ -60,9 +60,9 @@ fn check_min_and_max_priority_values(
 }
 
 #[rstest]
-#[cfg(linux)]
+#[cfg(target_os = "linux")]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle))]
-#[cfg(linux)]
+#[cfg(target_os = "linux")]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch))]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other))]
 fn set_priority_with_normal_policy_but_with_invalid_value(#[case] policy: ThreadSchedulePolicy) {
