@@ -25,7 +25,12 @@ fn get_and_set_priority_with_normal_policies(
     assert!(set_thread_priority_and_policy(thread_native_id(), correct_priority, policy,).is_ok());
 }
 
-#[cfg(any(target_os = "macos", target_os = "openbsd", target_os = "freebsd", target_os = "netbsd"))]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "openbsd",
+    target_os = "freebsd",
+    target_os = "netbsd"
+))]
 #[rstest]
 fn get_and_set_priority_with_normal_policies(
     #[values(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other))]
@@ -78,7 +83,12 @@ fn set_priority_with_normal_policy_but_with_invalid_value(#[case] policy: Thread
     );
 }
 
-#[cfg(any(target_os = "macos", target_os = "openbsd", target_os = "freebsd", target_os = "netbsd"))]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "openbsd",
+    target_os = "freebsd",
+    target_os = "netbsd"
+))]
 #[test]
 // In macOS the SCHED_OTHER policy allows having a non-zero priority value.
 fn get_and_set_priority_with_normal_policy() {
