@@ -4,7 +4,7 @@ use rstest::rstest;
 use std::convert::TryInto;
 use thread_priority::*;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(linux)]
 #[rstest]
 fn get_and_set_priority_with_normal_policies(
     #[values(
@@ -25,7 +25,7 @@ fn get_and_set_priority_with_normal_policies(
     assert!(set_thread_priority_and_policy(thread_native_id(), correct_priority, policy,).is_ok());
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "openbsd", target_os = "freebsd", target_os = "netbsd"))]
 #[rstest]
 fn get_and_set_priority_with_normal_policies(
     #[values(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other))]
@@ -37,9 +37,10 @@ fn get_and_set_priority_with_normal_policies(
     assert!(set_thread_priority_and_policy(thread_native_id(), priority, policy,).is_ok());
 }
 
-#[cfg(not(target_os = "macos"))]
 #[rstest]
+#[cfg(linux)]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle), 0..=0)]
+#[cfg(linux)]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch), 0..=0)]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other), 0..=0)]
 #[case(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo), 0..=99)]
@@ -54,27 +55,10 @@ fn check_min_and_max_priority_values(
     assert!(posix_range.contains(&min_value));
 }
 
-#[cfg(target_os = "macos")]
 #[rstest]
-fn check_min_and_max_priority_values(
-    #[values(
-        ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other),
-        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo),
-        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin)
-    )]
-    policy: ThreadSchedulePolicy,
-) {
-    let posix_range = 0..=99;
-
-    let max_value = ThreadPriority::max_value_for_policy(policy).unwrap();
-    let min_value = ThreadPriority::min_value_for_policy(policy).unwrap();
-    assert!(posix_range.contains(&max_value));
-    assert!(posix_range.contains(&min_value));
-}
-
-#[cfg(not(target_os = "macos"))]
-#[rstest]
+#[cfg(linux)]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle))]
+#[cfg(linux)]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch))]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other))]
 fn set_priority_with_normal_policy_but_with_invalid_value(#[case] policy: ThreadSchedulePolicy) {
@@ -94,7 +78,7 @@ fn set_priority_with_normal_policy_but_with_invalid_value(#[case] policy: Thread
     );
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "openbsd", target_os = "freebsd", target_os = "netbsd"))]
 #[test]
 // In macOS the SCHED_OTHER policy allows having a non-zero priority value.
 fn get_and_set_priority_with_normal_policy() {
