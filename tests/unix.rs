@@ -1,10 +1,9 @@
 #![cfg(not(windows))]
 
 use rstest::rstest;
-use std::convert::TryInto;
 use thread_priority::*;
 
-#[cfg(linux)]
+#[cfg(target_os = "linux")]
 #[rstest]
 fn get_and_set_priority_with_normal_policies(
     #[values(
