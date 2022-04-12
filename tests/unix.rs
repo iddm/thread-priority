@@ -1,6 +1,7 @@
 #![cfg(not(windows))]
 
 use rstest::rstest;
+use std::convert::TryInto;
 use thread_priority::*;
 
 #[cfg(target_os = "linux")]
@@ -66,8 +67,6 @@ fn check_min_and_max_priority_values(
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch))]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other))]
 fn set_priority_with_normal_policy_but_with_invalid_value(#[case] policy: ThreadSchedulePolicy) {
-    use std::convert::TryInto;
-
     let thread_id = thread_native_id();
 
     assert_eq!(
@@ -91,8 +90,6 @@ fn set_priority_with_normal_policy_but_with_invalid_value(#[case] policy: Thread
 #[test]
 // In macOS the SCHED_OTHER policy allows having a non-zero priority value.
 fn get_and_set_priority_with_normal_policy() {
-    use std::convert::TryInto;
-
     let thread_id = thread_native_id();
     let normal_policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other);
 
@@ -124,8 +121,6 @@ fn get_and_set_priority_with_normal_policy() {
 fn get_and_set_priority_with_realtime_policy_requires_capabilities(
     #[case] realtime_policy: ThreadSchedulePolicy,
 ) {
-    use std::convert::TryInto;
-
     let thread_id = thread_native_id();
     let max_value = ThreadPriority::max_value_for_policy(realtime_policy).unwrap();
     let min_value = ThreadPriority::min_value_for_policy(realtime_policy).unwrap();
