@@ -1,8 +1,5 @@
 # thread-priority
-[![CI](https://github.com/vityafx/thread-priority/actions/workflows/ci.yml/badge.svg)](https://github.com/vityafx/thread-priority/actions/workflows/ci.yml)
-[![Crates](https://img.shields.io/crates/v/thread-priority.svg)](https://crates.io/crates/thread-priority)
-[![Docs](https://docs.rs/thread-priority/badge.svg)](https://docs.rs/thread-priority)
-[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![CI](https://github.com/vityafx/thread-priority/actions/workflows/ci.yml/badge.svg)](https://github.com/vityafx/thread-priority/actions/workflows/ci.yml) [![Crates](https://img.shields.io/crates/v/thread-priority.svg)](https://crates.io/crates/thread-priority) [![Docs](https://docs.rs/thread-priority/badge.svg)](https://docs.rs/thread-priority) [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 
 A simple library to control thread schedule policies and thread priority.
