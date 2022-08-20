@@ -12,7 +12,7 @@ categories = ["concurrency", "asynchronous", "os"]
 edition = "2018"
 
 [dev-dependencies]
-rstest = "0.15"
+rstest = "0.13"
 
 [dependencies]
 log = "0.4"

@@ -26,6 +26,7 @@ fn get_and_set_priority_with_normal_policies(
     }
 }
 
+// In macOS it is allowed to specify number as a SCHED_OTHER policy priority.
 #[cfg(any(
     target_os = "macos",
     target_os = "openbsd",
@@ -39,8 +40,7 @@ fn get_and_set_priority_with_normal_policies(
     #[values(ThreadPriority::Min, ThreadPriority::Max, ThreadPriority::Crossplatform(23u8.try_into().unwrap()))]
     priority: ThreadPriority,
 ) {
-    // In macOS it is allowed to specify number as a SCHED_OTHER policy priority.
-    assert!(set_thread_priority_and_policy(thread_native_id(), priority, policy,).is_ok());
+    assert!(set_thread_priority_and_policy(thread_native_id(), priority, policy).is_ok());
 }
 
 #[rstest]
@@ -69,6 +69,7 @@ fn check_min_and_max_priority_values(
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other))]
 fn set_priority_with_normal_policy_but_with_invalid_value(#[case] policy: ThreadSchedulePolicy) {
     let thread_id = thread_native_id();
+    #[cfg(target_os = "linux")]
     let expected = if policy == ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle) {
         // In Linux we should get an error whenever a non-zero value is passed as priority and a normal
         // scheduling policy is used.
@@ -94,7 +95,8 @@ fn set_priority_with_normal_policy_but_with_invalid_value(#[case] policy: Thread
     target_os = "netbsd"
 ))]
 #[test]
-// In macOS the SCHED_OTHER policy allows having a non-zero priority value.
+// In macOS the SCHED_OTHER policy allows having a non-zero priority value,
+// but the crate doesn't use this opportunity for normal threads and uses niceness instead.
 fn get_and_set_priority_with_normal_policy() {
     let thread_id = thread_native_id();
     let normal_policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other);
@@ -108,17 +110,6 @@ fn get_and_set_priority_with_normal_policy() {
         Ok(())
     );
     assert_eq!(thread_schedule_policy(), Ok(normal_policy));
-    assert_eq!(
-        thread_schedule_policy_param(thread_native_id()),
-        Ok((normal_policy, ScheduleParams { sched_priority: 23 }))
-    );
-    assert_eq!(
-        Thread::current(),
-        Ok(Thread {
-            priority: ThreadPriority::Crossplatform(23u8.try_into().unwrap()),
-            id: thread_native_id()
-        })
-    );
 }
 
 #[rstest]

@@ -54,6 +54,22 @@ fn errno() -> libc::c_int {
     }
 }
 
+fn set_errno(number: libc::c_int) {
+    unsafe {
+        cfg_if::cfg_if! {
+            if #[cfg(any(target_os = "openbsd", target_os = "netbsd"))] {
+                *libc::__errno() = number;
+            } else if #[cfg(target_os = "linux")] {
+                *libc::__errno_location() = number;
+            } else if #[cfg(any(target_os = "macos", target_os = "freebsd"))] {
+                *libc::__error() = number;
+            } else {
+                compile_error!("Your OS is probably not supported.")
+            }
+        }
+    }
+}
+
 /// Copy of the Linux kernel's sched_attr type
 #[repr(C)]
 #[derive(Debug, Default)]
@@ -315,7 +331,6 @@ impl ThreadPriority {
                     let niceness_values = NICENESS_MAX.abs() + NICENESS_MIN.abs();
                     let ratio = p as f32 / ThreadPriorityValue::MAX as f32;
                     let niceness = ((niceness_values as f32 * ratio) as i8 + NICENESS_MAX) as i32;
-                    dbg!(niceness_values, ratio, niceness);
                     Self::to_allowed_value_for_policy(niceness, policy).map(|v| v as u32)
                 }
             },
@@ -446,7 +461,6 @@ pub fn set_thread_priority_and_policy(
         }
         _ => {
             let fixed_priority = priority.to_posix(policy)?;
-            dbg!(policy, priority, fixed_priority);
             if let ThreadSchedulePolicy::Realtime(_) = policy {
                 // If the policy is a realtime one, the priority is set via
                 // pthread_setschedparam.
@@ -470,11 +484,13 @@ pub fn set_thread_priority_and_policy(
             } else {
                 // If this is a normal-scheduled thread, the priority is
                 // set via niceness.
-                let ret = unsafe { libc::nice(fixed_priority) };
+                set_errno(0);
 
-                match ret {
-                    -1 => Err(Error::OS(errno())),
-                    _ => Ok(()),
+                unsafe { libc::nice(fixed_priority) };
+
+                match errno() {
+                    0 => Ok(()),
+                    e => Err(Error::OS(e)),
                 }
             }
         }
