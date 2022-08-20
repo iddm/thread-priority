@@ -13,16 +13,16 @@ fn get_and_set_priority_with_normal_policies(
         ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch)
     )]
     policy: ThreadSchedulePolicy,
-    #[values(ThreadPriority::Min, ThreadPriority::Max)] correct_priority: ThreadPriority,
-    #[values(ThreadPriority::Crossplatform(23u8.try_into().unwrap()))]
-    incorrect_priority: ThreadPriority,
+    #[values(ThreadPriority::Min, ThreadPriority::Max, ThreadPriority::Crossplatform(23u8.try_into().unwrap()))]
+    priority: ThreadPriority,
 ) {
-    // In Linux it is only allowed to specify zero as a priority for normal scheduling policies.
-    assert!(
-        set_thread_priority_and_policy(thread_native_id(), incorrect_priority, policy,).is_err()
-    );
-    // For the case Min or Max is used, it is implicitly set to `0` so that there is no actual error.
-    assert!(set_thread_priority_and_policy(thread_native_id(), correct_priority, policy,).is_ok());
+    let ret = set_thread_priority_and_policy(thread_native_id(), priority, policy);
+    if policy == ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle)
+    && priority == ThreadPriority::Crossplatform(23u8.try_into().unwrap()) {
+        assert_eq!(ret, Err(Error::PriorityNotInRange(0..=0)));
+    } else {
+        assert!(ret.is_ok());
+    }
 }
 
 #[cfg(any(
@@ -46,8 +46,8 @@ fn get_and_set_priority_with_normal_policies(
 #[cfg(target_os = "linux")]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle), 0..=0)]
 #[cfg(target_os = "linux")]
-#[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch), 0..=0)]
-#[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other), 0..=0)]
+#[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch), -20..=19)]
+#[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other), -20..=19)]
 #[case(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo), 0..=99)]
 #[case(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin), 0..=99)]
 fn check_min_and_max_priority_values(
@@ -68,6 +68,13 @@ fn check_min_and_max_priority_values(
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other))]
 fn set_priority_with_normal_policy_but_with_invalid_value(#[case] policy: ThreadSchedulePolicy) {
     let thread_id = thread_native_id();
+    let expected = if policy == ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle) {
+        // In Linux we should get an error whenever a non-zero value is passed as priority and a normal
+        // scheduling policy is used.
+        Err(Error::PriorityNotInRange(0..=0))
+    } else {
+        Ok(())
+    };
 
     assert_eq!(
         set_thread_priority_and_policy(
@@ -75,9 +82,7 @@ fn set_priority_with_normal_policy_but_with_invalid_value(#[case] policy: Thread
             ThreadPriority::Crossplatform(23u8.try_into().unwrap()),
             policy,
         ),
-        // In Linux we should get an error whenever a non-zero value is passed as priority and a normal
-        // scheduling policy is used.
-        Err(Error::PriorityNotInRange(0..=0))
+        expected
     );
 }
 

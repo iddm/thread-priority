@@ -24,6 +24,13 @@ use std::mem::MaybeUninit;
 /// An alias type for a thread id.
 pub type ThreadId = libc::pthread_t;
 
+/// The maximum value possible for niceness. Threads with this value
+/// of niceness have the highest priority possible
+pub const NICENESS_MAX: i8 = -20;
+/// The minimum value possible for niceness. Threads with this value
+/// of niceness have the lowest priority possible.
+pub const NICENESS_MIN: i8 = 19;
+
 /// Proxy structure to maintain compatibility between glibc and musl
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ScheduleParams {
@@ -114,16 +121,46 @@ impl RealtimeThreadSchedulePolicy {
     }
 }
 
-/// Normal (usual) schedule policies
+/// Normal (non-realtime) schedule policies
+/// For these schedule policies, [`niceness`](https://man7.org/linux/man-pages/man7/sched.7.html)
+/// is used.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum NormalThreadSchedulePolicy {
-    /// For running very low priority background jobs
+    /// For running very low priority background jobs.
+    /// (Since Linux 2.6.23.) `SCHED_IDLE` can be used only at static priority 0;
+    /// the process nice value has no influence for this policy.
+    ///
+    /// This policy is intended for running jobs at extremely low priority (lower even
+    /// than a +19 nice value with the SCHED_OTHER or SCHED_BATCH policies).
     #[cfg(target_os = "linux")]
     Idle,
-    /// For "batch" style execution of processes
+    /// For "batch" style execution of processes.
+    /// (Since Linux 2.6.16.) `SCHED_BATCH` can be used only at static priority 0.
+    /// This policy is similar to SCHED_OTHER in that it schedules the thread
+    /// according to its dynamic priority (based on the nice value). The difference is
+    /// that this policy will cause the scheduler to always assume that the thread is
+    /// CPU-intensive. Consequently, the scheduler will apply a small scheduling penalty
+    /// with respect to wakeup behavior, so that this thread is mildly disfavored in scheduling decisions.
+    ///
+    /// This policy is useful for workloads that are noninteractive, but do not want to lower their
+    /// nice value, and for workloads that want a deterministic scheduling policy without interactivity
+    /// causing extra preemptions (between the workload's tasks).
     #[cfg(target_os = "linux")]
     Batch,
-    /// The standard round-robin time-sharing policy
+    /// The standard round-robin time-sharing policy, also sometimes referred to as "Normal".
+    ///
+    /// `SCHED_OTHER` can be used at only static priority 0 (i.e., threads under real-time policies
+    /// always have priority over `SCHED_OTHER` processes). `SCHED_OTHER` is the standard Linux
+    /// time-sharing scheduler that is intended for all threads that do not require the special
+    /// real-time mechanisms.
+    ///
+    /// The thread to run is chosen from the static priority 0 list based on a dynamic priority that
+    /// is determined only inside this list. The dynamic  priority  is based on the nice value (see below)
+    /// and is increased for each time quantum the thread is ready to run, but denied to run by the scheduler.
+    ///
+    /// This ensures fair progress among all `SCHED_OTHER` threads.
+    ///
+    /// In the Linux kernel source code, the `SCHED_OTHER` policy is actually named `SCHED_NORMAL`.
     Other,
 }
 impl NormalThreadSchedulePolicy {
@@ -138,12 +175,12 @@ impl NormalThreadSchedulePolicy {
     }
 }
 
-/// Thread schedule policy definition
+/// Thread schedule policy definition.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ThreadSchedulePolicy {
-    /// Normal thread schedule policies
+    /// Normal thread schedule policies.
     Normal(NormalThreadSchedulePolicy),
-    /// Realtime thread schedule policies
+    /// Realtime thread schedule policies.
     Realtime(RealtimeThreadSchedulePolicy),
 }
 impl ThreadSchedulePolicy {
@@ -186,22 +223,45 @@ impl ThreadPriority {
     /// Returns the maximum allowed value for using with the provided policy.
     /// The returned number is in the range of allowed values.
     pub fn max_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
-        let max_priority = unsafe { libc::sched_get_priority_max(policy.to_posix()) };
-        if max_priority < 0 {
-            Err(Error::OS(errno()))
-        } else {
-            Ok(max_priority)
+        match policy {
+            #[cfg(target_os = "linux")]
+            ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle) => {
+                // Only `0` can be returned for `Idle` threads.
+                Ok(0)
+            }
+            ThreadSchedulePolicy::Normal(_) => {
+                // Niceness can be used, from -20 to 19, where `-20` is the maximum.
+                Ok(NICENESS_MAX as libc::c_int)
+            }
+            _ => {
+                let max_priority = unsafe { libc::sched_get_priority_max(policy.to_posix()) };
+                if max_priority < 0 {
+                    Err(Error::OS(errno()))
+                } else {
+                    Ok(max_priority)
+                }
+            }
         }
     }
 
     /// Returns the minimum allowed value for using with the provided policy.
     /// The returned number is in the range of allowed values.
     pub fn min_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
-        let min_priority = unsafe { libc::sched_get_priority_min(policy.to_posix()) };
-        if min_priority < 0 {
-            Err(Error::OS(errno()))
-        } else {
-            Ok(min_priority)
+        match policy {
+            #[cfg(target_os = "linux")]
+            ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle) => Ok(0),
+            ThreadSchedulePolicy::Normal(_) => {
+                // Niceness can be used, from -20 to 19, where `-20` is the maximum.
+                Ok(NICENESS_MIN as libc::c_int)
+            }
+            _ => {
+                let min_priority = unsafe { libc::sched_get_priority_min(policy.to_posix()) };
+                if min_priority < 0 {
+                    Err(Error::OS(errno()))
+                } else {
+                    Ok(min_priority)
+                }
+            }
         }
     }
 
@@ -212,7 +272,11 @@ impl ThreadPriority {
     ) -> Result<libc::c_int, Error> {
         let min_priority = Self::min_value_for_policy(policy)?;
         let max_priority = Self::max_value_for_policy(policy)?;
-        let allowed_range = min_priority..=max_priority;
+        let (min, max) = (
+            std::cmp::min(min_priority, max_priority),
+            std::cmp::max(min_priority, max_priority),
+        );
+        let allowed_range = min..=max;
         if allowed_range.contains(&priority) {
             Ok(priority)
         } else {
@@ -223,6 +287,11 @@ impl ThreadPriority {
     /// Converts the priority stored to a posix number.
     /// POSIX value can not be known without knowing the scheduling policy
     /// <https://linux.die.net/man/2/sched_get_priority_max>
+    ///
+    /// For threads scheduled under one of the normal scheduling policies (SCHED_OTHER, SCHED_IDLE, SCHED_BATCH), sched_priority is not used in scheduling decisions (it must be specified as 0).
+    /// Source: <https://man7.org/linux/man-pages/man7/sched.7.html>
+    /// Due to this restriction of normal scheduling policies and the intention of the library, the niceness is used
+    /// instead for such processes.
     pub fn to_posix(self, policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
         let ret = match self {
             ThreadPriority::Min => match policy {
@@ -239,7 +308,16 @@ impl ThreadPriority {
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
-                _ => Self::to_allowed_value_for_policy(p as i32, policy).map(|v| v as u32),
+                ThreadSchedulePolicy::Realtime(_) => {
+                    Self::to_allowed_value_for_policy(p as i32, policy).map(|v| v as u32)
+                }
+                ThreadSchedulePolicy::Normal(_) => {
+                    let niceness_values = NICENESS_MAX.abs() + NICENESS_MIN.abs();
+                    let ratio = p as f32 / ThreadPriorityValue::MAX as f32;
+                    let niceness = ((niceness_values as f32 * ratio) as i8 + NICENESS_MAX) as i32;
+                    dbg!(niceness_values, ratio, niceness);
+                    Self::to_allowed_value_for_policy(niceness, policy).map(|v| v as u32)
+                }
             },
             // TODO avoid code duplication.
             ThreadPriority::Os(crate::ThreadPriorityOsValue(p)) => match policy {
@@ -278,6 +356,60 @@ impl ThreadPriority {
     }
 }
 
+fn set_thread_priority_and_policy_deadline(
+    native: ThreadId,
+    priority: ThreadPriority,
+) -> Result<(), Error> {
+    use std::convert::TryInto as _;
+
+    let (runtime, deadline, period) = match priority {
+        ThreadPriority::Deadline {
+            runtime,
+            deadline,
+            period,
+        } => (|| {
+            Ok((
+                runtime.as_nanos().try_into()?,
+                deadline.as_nanos().try_into()?,
+                period.as_nanos().try_into()?,
+            ))
+        })()
+        .map_err(|_: std::num::TryFromIntError| {
+            Error::Priority("Deadline policy durations don't fit into a `u64`.")
+        })?,
+        _ => {
+            return Err(Error::Priority(
+                "Deadline policy given without deadline priority.",
+            ))
+        }
+    };
+    let tid = native as libc::pid_t;
+    let sched_attr = SchedAttr {
+        size: std::mem::size_of::<SchedAttr>() as u32,
+        sched_policy: RealtimeThreadSchedulePolicy::Deadline.to_posix() as u32,
+
+        sched_runtime: runtime,
+        sched_deadline: deadline,
+        sched_period: period,
+
+        ..Default::default()
+    };
+    let ret = unsafe {
+        libc::syscall(
+            libc::SYS_sched_setattr,
+            tid,
+            &sched_attr as *const _,
+            // we are not setting SCHED_FLAG_RECLAIM nor SCHED_FLAG_DL_OVERRUN
+            0,
+        ) as i32
+    };
+
+    match ret {
+        0 => Ok(()),
+        e => Err(Error::OS(e)),
+    }
+}
+
 /// Sets thread's priority and schedule policy
 ///
 /// * May require privileges
@@ -305,71 +437,46 @@ pub fn set_thread_priority_and_policy(
     priority: ThreadPriority,
     policy: ThreadSchedulePolicy,
 ) -> Result<(), Error> {
-    let ret = match policy {
+    match policy {
         // SCHED_DEADLINE policy requires its own syscall
         #[cfg(target_os = "linux")]
         ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
-            use std::convert::TryInto as _;
-            let (runtime, deadline, period) = match priority {
-                ThreadPriority::Deadline {
-                    runtime,
-                    deadline,
-                    period,
-                } => (|| {
-                    Ok((
-                        runtime.as_nanos().try_into()?,
-                        deadline.as_nanos().try_into()?,
-                        period.as_nanos().try_into()?,
-                    ))
-                })()
-                .map_err(|_: std::num::TryFromIntError| {
-                    Error::Priority("Deadline policy durations don't fit into a `u64`.")
-                })?,
-                _ => {
-                    return Err(Error::Priority(
-                        "Deadline policy given without deadline priority.",
-                    ))
-                }
-            };
-            let tid = native as libc::pid_t;
-            let sched_attr = SchedAttr {
-                size: std::mem::size_of::<SchedAttr>() as u32,
-                sched_policy: policy.to_posix() as u32,
-
-                sched_runtime: runtime,
-                sched_deadline: deadline,
-                sched_period: period,
-
-                ..Default::default()
-            };
-            unsafe {
-                libc::syscall(
-                    libc::SYS_sched_setattr,
-                    tid,
-                    &sched_attr as *const _,
-                    // we are not setting SCHED_FLAG_RECLAIM nor SCHED_FLAG_DL_OVERRUN
-                    0,
-                ) as i32
-            }
+            set_thread_priority_and_policy_deadline(native, priority)
         }
         _ => {
             let fixed_priority = priority.to_posix(policy)?;
-            let params = ScheduleParams {
-                sched_priority: fixed_priority,
-            }
-            .into_posix();
-            unsafe {
-                libc::pthread_setschedparam(
-                    native,
-                    policy.to_posix(),
-                    &params as *const libc::sched_param,
-                )
+            dbg!(policy, priority, fixed_priority);
+            if let ThreadSchedulePolicy::Realtime(_) = policy {
+                // If the policy is a realtime one, the priority is set via
+                // pthread_setschedparam.
+                let params = ScheduleParams {
+                    sched_priority: fixed_priority,
+                }
+                .into_posix();
+
+                let ret = unsafe {
+                    libc::pthread_setschedparam(
+                        native,
+                        policy.to_posix(),
+                        &params as *const libc::sched_param,
+                    )
+                };
+
+                match ret {
+                    0 => Ok(()),
+                    e => Err(Error::OS(e)),
+                }
+            } else {
+                // If this is a normal-scheduled thread, the priority is
+                // set via niceness.
+                let ret = unsafe { libc::nice(fixed_priority) };
+
+                match ret {
+                    -1 => Err(Error::OS(errno())),
+                    _ => Ok(()),
+                }
             }
         }
-    };
-    match ret {
-        0 => Ok(()),
-        e => Err(Error::OS(e)),
     }
 }
 
