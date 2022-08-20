@@ -165,12 +165,18 @@ pub enum Error {
 /// ```
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ThreadPriorityValue(u8);
+impl ThreadPriorityValue {
+    /// The maximum value for a thread priority.
+    pub const MAX: u8 = 100;
+    /// The minimum value for a thread priority.
+    pub const MIN: u8 = 0;
+}
 
 impl std::convert::TryFrom<u8> for ThreadPriorityValue {
     type Error = &'static str;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        if (0..=99).contains(&value) {
+        if (Self::MIN..Self::MAX).contains(&value) {
             Ok(Self(value))
         } else {
             Err("The value is not in the range of [0;99]")
