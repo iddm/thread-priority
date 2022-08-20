@@ -356,6 +356,7 @@ impl ThreadPriority {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn set_thread_priority_and_policy_deadline(
     native: ThreadId,
     priority: ThreadPriority,
