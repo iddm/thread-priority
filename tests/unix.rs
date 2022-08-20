@@ -18,7 +18,8 @@ fn get_and_set_priority_with_normal_policies(
 ) {
     let ret = set_thread_priority_and_policy(thread_native_id(), priority, policy);
     if policy == ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle)
-    && priority == ThreadPriority::Crossplatform(23u8.try_into().unwrap()) {
+        && priority == ThreadPriority::Crossplatform(23u8.try_into().unwrap())
+    {
         assert_eq!(ret, Err(Error::PriorityNotInRange(0..=0)));
     } else {
         assert!(ret.is_ok());
