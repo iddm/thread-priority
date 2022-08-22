@@ -6,12 +6,12 @@
 
 use std::convert::TryFrom;
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use libc::{SCHED_BATCH, SCHED_IDLE};
-#[cfg(target_os = "linux")]
-use libc::SCHED_OTHER;
 #[cfg(target_os = "android")]
 use libc::SCHED_NORMAL as SCHED_OTHER;
+#[cfg(target_os = "linux")]
+use libc::SCHED_OTHER;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use libc::{SCHED_BATCH, SCHED_IDLE};
 use libc::{SCHED_FIFO, SCHED_RR};
 
 use crate::{Error, ThreadPriority, ThreadPriorityValue};
