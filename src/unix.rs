@@ -8,7 +8,7 @@ use std::convert::TryFrom;
 
 #[cfg(target_os = "android")]
 use libc::SCHED_NORMAL as SCHED_OTHER;
-#[cfg(target_os = "linux")]
+#[cfg(not(target_os = "android"))]
 use libc::SCHED_OTHER;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use libc::{SCHED_BATCH, SCHED_IDLE};
