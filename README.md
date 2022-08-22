@@ -11,6 +11,7 @@ Is `1.46`. If you need any help making it possible to compile with `1.36` please
 
 ## Supported platforms
 - Linux
+- Android
 - DragonFly
 - FreeBSD
 - OpenBSD
