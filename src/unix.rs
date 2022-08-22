@@ -6,7 +6,7 @@
 
 use std::convert::TryFrom;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use libc::{SCHED_BATCH, SCHED_IDLE};
 use libc::{SCHED_FIFO, SCHED_OTHER, SCHED_RR};
 
@@ -41,7 +41,7 @@ pub struct ScheduleParams {
 fn errno() -> libc::c_int {
     unsafe {
         cfg_if::cfg_if! {
-            if #[cfg(any(target_os = "openbsd", target_os = "netbsd"))] {
+            if #[cfg(any(target_os = "openbsd", target_os = "netbsd", target_os = "android"))] {
                 *libc::__errno()
             } else if #[cfg(target_os = "linux")] {
                 *libc::__errno_location()
@@ -57,7 +57,7 @@ fn errno() -> libc::c_int {
 fn set_errno(number: libc::c_int) {
     unsafe {
         cfg_if::cfg_if! {
-            if #[cfg(any(target_os = "openbsd", target_os = "netbsd"))] {
+            if #[cfg(any(target_os = "openbsd", target_os = "netbsd", target_os = "android"))] {
                 *libc::__errno() = number;
             } else if #[cfg(target_os = "linux")] {
                 *libc::__errno_location() = number;
@@ -73,7 +73,7 @@ fn set_errno(number: libc::c_int) {
 /// Copy of the Linux kernel's sched_attr type
 #[repr(C)]
 #[derive(Debug, Default)]
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 pub struct SchedAttr {
     size: u32,
     sched_policy: u32,
@@ -122,7 +122,10 @@ pub enum RealtimeThreadSchedulePolicy {
     /// A deadline policy. Note, due to Linux expecting a pid_t and not a pthread_t, the given
     /// [ThreadId](struct.ThreadId) will be interpreted as a pid_t. This policy is NOT
     /// POSIX-compatible, so we only include it for linux targets.
-    #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+    #[cfg(all(
+        any(target_os = "linux", target_os = "android"),
+        not(target_arch = "wasm32")
+    ))]
     Deadline,
 }
 
@@ -131,7 +134,10 @@ impl RealtimeThreadSchedulePolicy {
         match self {
             RealtimeThreadSchedulePolicy::Fifo => SCHED_FIFO,
             RealtimeThreadSchedulePolicy::RoundRobin => SCHED_RR,
-            #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+            #[cfg(all(
+                any(target_os = "linux", target_os = "android"),
+                not(target_arch = "wasm32")
+            ))]
             RealtimeThreadSchedulePolicy::Deadline => 6,
         }
     }
@@ -148,7 +154,7 @@ pub enum NormalThreadSchedulePolicy {
     ///
     /// This policy is intended for running jobs at extremely low priority (lower even
     /// than a +19 nice value with the SCHED_OTHER or SCHED_BATCH policies).
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     Idle,
     /// For "batch" style execution of processes.
     /// (Since Linux 2.6.16.) `SCHED_BATCH` can be used only at static priority 0.
@@ -161,7 +167,7 @@ pub enum NormalThreadSchedulePolicy {
     /// This policy is useful for workloads that are noninteractive, but do not want to lower their
     /// nice value, and for workloads that want a deterministic scheduling policy without interactivity
     /// causing extra preemptions (between the workload's tasks).
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     Batch,
     /// The standard round-robin time-sharing policy, also sometimes referred to as "Normal".
     ///
@@ -182,9 +188,9 @@ pub enum NormalThreadSchedulePolicy {
 impl NormalThreadSchedulePolicy {
     fn to_posix(self) -> libc::c_int {
         match self {
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             NormalThreadSchedulePolicy::Idle => SCHED_IDLE,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             NormalThreadSchedulePolicy::Batch => SCHED_BATCH,
             NormalThreadSchedulePolicy::Other => SCHED_OTHER,
         }
@@ -212,11 +218,11 @@ impl ThreadSchedulePolicy {
             SCHED_OTHER => Ok(ThreadSchedulePolicy::Normal(
                 NormalThreadSchedulePolicy::Other,
             )),
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             SCHED_BATCH => Ok(ThreadSchedulePolicy::Normal(
                 NormalThreadSchedulePolicy::Batch,
             )),
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             SCHED_IDLE => Ok(ThreadSchedulePolicy::Normal(
                 NormalThreadSchedulePolicy::Idle,
             )),
@@ -226,7 +232,10 @@ impl ThreadSchedulePolicy {
             SCHED_RR => Ok(ThreadSchedulePolicy::Realtime(
                 RealtimeThreadSchedulePolicy::RoundRobin,
             )),
-            #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+            #[cfg(all(
+                any(target_os = "linux", target_os = "android"),
+                not(target_arch = "wasm32")
+            ))]
             6 => Ok(ThreadSchedulePolicy::Realtime(
                 RealtimeThreadSchedulePolicy::Deadline,
             )),
@@ -240,7 +249,7 @@ impl ThreadPriority {
     /// The returned number is in the range of allowed values.
     pub fn max_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
         match policy {
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle) => {
                 // Only `0` can be returned for `Idle` threads.
                 Ok(0)
@@ -264,7 +273,7 @@ impl ThreadPriority {
     /// The returned number is in the range of allowed values.
     pub fn min_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
         match policy {
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle) => Ok(0),
             ThreadSchedulePolicy::Normal(_) => {
                 // Niceness can be used, from -20 to 19, where `-20` is the maximum.
@@ -312,7 +321,10 @@ impl ThreadPriority {
         let ret = match self {
             ThreadPriority::Min => match policy {
                 // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
-                #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+                #[cfg(all(
+                    any(target_os = "linux", target_os = "android"),
+                    not(target_arch = "wasm32")
+                ))]
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
@@ -320,7 +332,10 @@ impl ThreadPriority {
             },
             ThreadPriority::Crossplatform(ThreadPriorityValue(p)) => match policy {
                 // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
-                #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+                #[cfg(all(
+                    any(target_os = "linux", target_os = "android"),
+                    not(target_arch = "wasm32")
+                ))]
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
@@ -337,7 +352,10 @@ impl ThreadPriority {
             // TODO avoid code duplication.
             ThreadPriority::Os(crate::ThreadPriorityOsValue(p)) => match policy {
                 // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
-                #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+                #[cfg(all(
+                    any(target_os = "linux", target_os = "android"),
+                    not(target_arch = "wasm32")
+                ))]
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
@@ -345,13 +363,19 @@ impl ThreadPriority {
             },
             ThreadPriority::Max => match policy {
                 // SCHED_DEADLINE doesn't really have a notion of priority, this is an error
-                #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+                #[cfg(all(
+                    any(target_os = "linux", target_os = "android"),
+                    not(target_arch = "wasm32")
+                ))]
                 ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => Err(
                     Error::Priority("Deadline scheduling must use deadline priority."),
                 ),
                 _ => Self::max_value_for_policy(policy).map(|v| v as u32),
             },
-            #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+            #[cfg(all(
+                any(target_os = "linux", target_os = "android"),
+                not(target_arch = "wasm32")
+            ))]
             ThreadPriority::Deadline {
                 runtime: _,
                 deadline: _,
@@ -371,7 +395,7 @@ impl ThreadPriority {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn set_thread_priority_and_policy_deadline(
     native: ThreadId,
     priority: ThreadPriority,
@@ -455,7 +479,7 @@ pub fn set_thread_priority_and_policy(
 ) -> Result<(), Error> {
     match policy {
         // SCHED_DEADLINE policy requires its own syscall
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) => {
             set_thread_priority_and_policy_deadline(native, priority)
         }
@@ -633,7 +657,7 @@ pub trait ThreadExt {
         priority: ThreadPriority,
     ) -> Result<(), Error> {
         cfg_if::cfg_if! {
-            if #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))] {
+            if #[cfg(all(any(target_os = "linux", target_os = "android"), not(target_arch = "wasm32")))] {
                 if policy == ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline) {
                     set_thread_priority_and_policy(thread_native_id(), ThreadPriority::Crossplatform(ThreadPriorityValue(0)), policy)
                 } else {

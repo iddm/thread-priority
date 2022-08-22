@@ -94,10 +94,11 @@
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
+    target_os = "android",
     target_arch = "wasm32",
 ))]
 pub mod unix;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use std::time::Duration;
 
 #[cfg(any(
@@ -107,6 +108,7 @@ use std::time::Duration;
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
+    target_os = "android",
     target_arch = "wasm32",
 ))]
 pub use unix::*;
@@ -238,7 +240,7 @@ variant.
     ///                 |<-- Runtime ------->|
     ///        |<----------- Deadline ----------->|
     ///        |<-------------- Period ------------------->|
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     Deadline {
         /// Set this to something larger than the average computation time
         /// or to the worst-case computation time for hard real-time tasks.
