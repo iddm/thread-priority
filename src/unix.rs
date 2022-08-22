@@ -8,7 +8,11 @@ use std::convert::TryFrom;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use libc::{SCHED_BATCH, SCHED_IDLE};
-use libc::{SCHED_FIFO, SCHED_OTHER, SCHED_RR};
+#[cfg(target_os = "linux")]
+use libc::SCHED_OTHER;
+#[cfg(target_os = "android")]
+use libc::SCHED_NORMAL as SCHED_OTHER;
+use libc::{SCHED_FIFO, SCHED_RR};
 
 use crate::{Error, ThreadPriority, ThreadPriorityValue};
 use std::mem::MaybeUninit;
