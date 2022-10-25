@@ -73,6 +73,9 @@ jobs:
         run: sudo -E /home/runner/.cargo/bin/cargo test --all-features
 #        run: sudo -E /usr/share/rust/.cargo/bin/cargo test --all-features
 
+      - name: Run examples
+        run: cargo run --example simple
+
   clippy:
     name: Run clippy
     runs-on: ubuntu-latest
