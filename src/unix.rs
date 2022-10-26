@@ -526,11 +526,10 @@ pub fn set_thread_priority_and_policy(
 }
 
 /// Set current thread's priority.
-/// To make the priority of use, the scheduling policy is determined from the value.
-/// If the value is not equal to `ThreadPriority::Crossplatform(0)`, then the one of
-/// the available real-time policies is used. Otherwise, the function does nothing,
-/// as the only reasonable outcome with zero-priority set would be to change a scheduling
-/// policy, for which there is [`set_thread_priority_and_policy`].
+/// In order to properly map a value of the thread priority, the thread scheduling
+/// must be known. This function attempts to retrieve the current thread's
+/// scheduling policy and thus map the priority value correctly, so that it fits
+/// within the scheduling policy's allowed range of values.
 ///
 /// * May require privileges
 ///
@@ -542,7 +541,7 @@ pub fn set_thread_priority_and_policy(
 /// ```
 pub fn set_current_thread_priority(priority: ThreadPriority) -> Result<(), Error> {
     let thread_id = thread_native_id();
-    let policy = ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo);
+    let policy = thread_schedule_policy()?;
     set_thread_priority_and_policy(thread_id, priority, policy)
 }
 
