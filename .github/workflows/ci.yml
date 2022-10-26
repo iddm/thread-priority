@@ -74,7 +74,7 @@ jobs:
 #        run: sudo -E /usr/share/rust/.cargo/bin/cargo test --all-features
 
       - name: Run examples
-        run: cargo run --example simple
+        run: sudo -E cargo run --example simple
 
   clippy:
     name: Run clippy
