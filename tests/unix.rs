@@ -29,6 +29,7 @@ fn get_and_set_priority_with_normal_policies(
 // In macOS it is allowed to specify number as a SCHED_OTHER policy priority.
 #[cfg(any(
     target_os = "macos",
+    target_os = "ios",
     target_os = "openbsd",
     target_os = "freebsd",
     target_os = "netbsd"
@@ -90,6 +91,7 @@ fn set_priority_with_normal_policy_but_with_invalid_value(#[case] policy: Thread
 
 #[cfg(any(
     target_os = "macos",
+    target_os = "ios",
     target_os = "openbsd",
     target_os = "freebsd",
     target_os = "netbsd"

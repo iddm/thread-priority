@@ -49,7 +49,7 @@ fn errno() -> libc::c_int {
                 *libc::__errno()
             } else if #[cfg(target_os = "linux")] {
                 *libc::__errno_location()
-            } else if #[cfg(any(target_os = "macos", target_os = "freebsd"))] {
+            } else if #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))] {
                 *libc::__error()
             } else {
                 compile_error!("Your OS is probably not supported.")
@@ -65,7 +65,7 @@ fn set_errno(number: libc::c_int) {
                 *libc::__errno() = number;
             } else if #[cfg(target_os = "linux")] {
                 *libc::__errno_location() = number;
-            } else if #[cfg(any(target_os = "macos", target_os = "freebsd"))] {
+            } else if #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))] {
                 *libc::__error() = number;
             } else {
                 compile_error!("Your OS is probably not supported.")
@@ -248,6 +248,7 @@ impl ThreadSchedulePolicy {
     }
 }
 
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 impl ThreadPriority {
     /// Returns the maximum allowed value for using with the provided policy.
     /// The returned number is in the range of allowed values.
@@ -399,6 +400,80 @@ impl ThreadPriority {
     }
 }
 
+// On apple targets, only `pthread_setschedparam` is allowed. `nice` will fail when increasing the priority if the use is not superuser.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+impl ThreadPriority {
+    /// Returns the maximum allowed value for using with the provided policy.
+    /// The returned number is in the range of allowed values.
+    pub fn max_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
+        let max_priority = unsafe { libc::sched_get_priority_max(policy.to_posix()) };
+        if max_priority < 0 {
+            Err(Error::OS(errno()))
+        } else {
+            Ok(max_priority)
+        }
+    }
+
+    /// Returns the minimum allowed value for using with the provided policy.
+    /// The returned number is in the range of allowed values.
+    pub fn min_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
+        let min_priority = unsafe { libc::sched_get_priority_min(policy.to_posix()) };
+        if min_priority < 0 {
+            Err(Error::OS(errno()))
+        } else {
+            Ok(min_priority)
+        }
+    }
+
+    /// Checks that the passed priority value is within the range of allowed values for using with the provided policy.
+    pub fn to_allowed_value_for_policy(
+        priority: libc::c_int,
+        policy: ThreadSchedulePolicy,
+    ) -> Result<libc::c_int, Error> {
+        let min_priority = Self::min_value_for_policy(policy)?;
+        let max_priority = Self::max_value_for_policy(policy)?;
+        let (min, max) = (
+            std::cmp::min(min_priority, max_priority),
+            std::cmp::max(min_priority, max_priority),
+        );
+        let allowed_range = min..=max;
+        if allowed_range.contains(&priority) {
+            Ok(priority)
+        } else {
+            Err(Error::PriorityNotInRange(allowed_range))
+        }
+    }
+
+    /// Converts the priority stored to a posix number.
+    /// POSIX value can not be known without knowing the scheduling policy
+    /// <https://linux.die.net/man/2/sched_get_priority_max>
+    ///
+    /// For threads scheduled under one of the normal scheduling policies (SCHED_OTHER, SCHED_IDLE, SCHED_BATCH), sched_priority is not used in scheduling decisions (it must be specified as 0).
+    /// Source: <https://man7.org/linux/man-pages/man7/sched.7.html>
+    /// Due to this restriction of normal scheduling policies and the intention of the library, the niceness is used
+    /// instead for such processes.
+    pub fn to_posix(self, policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
+        let ret = match self {
+            ThreadPriority::Min => Self::min_value_for_policy(policy).map(|v| v as u32),
+            ThreadPriority::Crossplatform(ThreadPriorityValue(p)) => {
+                Self::to_allowed_value_for_policy(p as i32, policy).map(|v| v as u32)
+            }
+            ThreadPriority::Os(crate::ThreadPriorityOsValue(p)) => {
+                Self::to_allowed_value_for_policy(p as i32, policy).map(|v| v as u32)
+            }
+            ThreadPriority::Max => Self::max_value_for_policy(policy).map(|v| v as u32),
+        };
+        ret.map(|p| p as libc::c_int)
+    }
+
+    /// Gets priority value from POSIX value.
+    /// In order to interpret it correctly, you should also take scheduling policy
+    /// into account.
+    pub fn from_posix(params: ScheduleParams) -> ThreadPriority {
+        ThreadPriority::Crossplatform(ThreadPriorityValue(params.sched_priority as u8))
+    }
+}
+
 #[cfg(any(target_os = "linux", target_os = "android"))]
 fn set_thread_priority_and_policy_deadline(
     native: ThreadId,
@@ -489,7 +564,9 @@ pub fn set_thread_priority_and_policy(
         }
         _ => {
             let fixed_priority = priority.to_posix(policy)?;
-            if let ThreadSchedulePolicy::Realtime(_) = policy {
+            if matches!(policy, ThreadSchedulePolicy::Realtime(_))
+                || cfg!(any(target_os = "macos", target_os = "ios"))
+            {
                 // If the policy is a realtime one, the priority is set via
                 // pthread_setschedparam.
                 let params = ScheduleParams {
