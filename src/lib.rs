@@ -486,6 +486,8 @@ impl ThreadBuilder {
     /// [`std::io::Result`] to its [`std::thread::ScopedJoinHandle`].
     ///
     /// See [`std::thread::Builder::spawn_scoped`]
+    #[rustversion::since(1.63)]
+    #[cfg(unix)]
     pub fn spawn_scoped<'scope, 'env, F, T>(
         mut self,
         scope: &'scope std::thread::Scope<'scope, 'env>,
@@ -518,6 +520,7 @@ impl ThreadBuilder {
     /// [`std::io::Result`] to its [`std::thread::ScopedJoinHandle`].
     ///
     /// See [`std::thread::Builder::spawn_scoped`]
+    #[rustversion::since(1.63)]
     #[cfg(windows)]
     pub fn spawn_scoped<'scope, 'env, F, T>(mut self, scope: &'scope std::thread::Scope<'scope, 'env>, f: F) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
     where
