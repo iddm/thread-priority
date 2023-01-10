@@ -482,6 +482,72 @@ impl ThreadBuilder {
         })
     }
 
+    /// Spawns a new scoped thread by taking ownership of the `Builder`, and returns an
+    /// [`std::io::Result`] to its [`std::thread::ScopedJoinHandle`].
+    ///
+    /// See [`std::thread::Builder::spawn_scoped`]
+    pub fn spawn_scoped<'scope, 'env, F, T>(
+        mut self,
+        scope: &'scope std::thread::Scope<'scope, 'env>,
+        f: F,
+    ) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
+    where
+        F: FnOnce(Result<(), Error>) -> T,
+        F: Send + 'scope,
+        T: Send + 'scope,
+    {
+        let priority = self.priority;
+        let policy = self.policy;
+
+        self.build_std()
+            .spawn_scoped(scope, move || match (priority, policy) {
+                (Some(priority), Some(policy)) => f(set_thread_priority_and_policy(
+                    thread_native_id(),
+                    priority,
+                    policy,
+                )),
+                (Some(priority), None) => f(priority.set_for_current()),
+                (None, Some(_policy)) => {
+                    unimplemented!("Setting the policy separately isn't currently supported.");
+                }
+                _ => f(Ok(())),
+            })
+    }
+
+    /// Spawns a new scoped thread by taking ownership of the `Builder`, and returns an
+    /// [`std::io::Result`] to its [`std::thread::ScopedJoinHandle`].
+    ///
+    /// See [`std::thread::Builder::spawn_scoped`]
+    #[cfg(windows)]
+    pub fn spawn_scoped<'scope, 'env, F, T>(mut self, scope: &'scope std::thread::Scope<'scope, 'env>, f: F) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
+    where
+        F: FnOnce(Result<(), Error>) -> T,
+        F: Send + 'scope,
+        T: Send + 'scope,
+    {
+        let thread_priority = self.priority;
+        let winapi_priority = self.winapi_priority;
+        let boost_enabled = self.boost_enabled;
+        let ideal_processor = self.ideal_processor;
+
+        self.build_std().spawn_scoped(scope, move || {
+            let mut result = match (thread_priority, winapi_priority) {
+                (Some(priority), None) => set_thread_priority(thread_native_id(), priority),
+                (_, Some(priority)) => set_winapi_thread_priority(thread_native_id(), priority),
+                _ => Ok(()),
+            };
+            if result.is_ok() && boost_enabled {
+                result = set_current_thread_priority_boost(boost_enabled);
+            }
+            if result.is_ok() {
+                if let Some(ideal_processor) = ideal_processor {
+                    result = set_current_thread_ideal_processor(ideal_processor).map(|_| ());
+                }
+            }
+            f(result)
+        })
+    }
+
     fn build_std(&mut self) -> std::thread::Builder {
         let mut builder = std::thread::Builder::new();
 
