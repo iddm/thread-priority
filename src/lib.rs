@@ -522,7 +522,11 @@ impl ThreadBuilder {
     /// See [`std::thread::Builder::spawn_scoped`]
     #[rustversion::since(1.63)]
     #[cfg(windows)]
-    pub fn spawn_scoped<'scope, 'env, F, T>(mut self, scope: &'scope std::thread::Scope<'scope, 'env>, f: F) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
+    pub fn spawn_scoped<'scope, 'env, F, T>(
+        mut self,
+        scope: &'scope std::thread::Scope<'scope, 'env>,
+        f: F,
+    ) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
     where
         F: FnOnce(Result<(), Error>) -> T,
         F: Send + 'scope,
@@ -593,8 +597,12 @@ impl ThreadBuilder {
     /// [`std::io::Result`] to its [`std::thread::ScopedJoinHandle`].
     ///
     /// See [`std::thread::Builder::spawn_scoped`]
-    pub fn spawn_scoped_careless<'scope, 'env, F, T>(self,
-        scope: &'scope std::thread::Scope<'scope, 'env>, f: F) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
+    #[rustversion::since(1.63)]
+    pub fn spawn_scoped_careless<'scope, 'env, F, T>(
+        self,
+        scope: &'scope std::thread::Scope<'scope, 'env>,
+        f: F,
+    ) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
     where
         F: FnOnce() -> T,
         F: Send + 'scope,
@@ -669,6 +677,7 @@ pub trait ThreadBuilderExt {
     ///     }).unwrap();
     /// });
     /// ```
+    #[rustversion::since(1.63)]
     fn spawn_scoped_with_priority<'scope, 'env, F, T>(
         self,
         scope: &'scope std::thread::Scope<'scope, 'env>,
@@ -695,6 +704,7 @@ impl ThreadBuilderExt for std::thread::Builder {
         self.spawn(move || f(priority.set_for_current()))
     }
 
+    #[rustversion::since(1.63)]
     fn spawn_scoped_with_priority<'scope, 'env, F, T>(
         self,
         scope: &'scope std::thread::Scope<'scope, 'env>,
@@ -704,12 +714,14 @@ impl ThreadBuilderExt for std::thread::Builder {
     where
         F: FnOnce(Result<(), Error>) -> T,
         F: Send + 'scope,
-        T: Send + 'scope {
+        T: Send + 'scope,
+    {
         self.spawn_scoped(scope, move || f(priority.set_for_current()))
     }
 }
 
 /// Adds scoped thread building functions using the priority.
+#[rustversion::since(1.63)]
 pub trait ThreadScopeExt<'scope> {
     /// Spawn a scoped thread with set priority. The passed functor `f` is executed in the spawned thread and
     /// receives as the only argument the result of setting the thread priority.
@@ -745,6 +757,7 @@ pub trait ThreadScopeExt<'scope> {
         T: Send + 'scope;
 }
 
+#[rustversion::since(1.63)]
 impl<'scope, 'env> ThreadScopeExt<'scope> for std::thread::Scope<'scope, 'env> {
     fn spawn_with_priority<F, T>(
         &'scope self,
@@ -754,7 +767,8 @@ impl<'scope, 'env> ThreadScopeExt<'scope> for std::thread::Scope<'scope, 'env> {
     where
         F: FnOnce(Result<(), Error>) -> T,
         F: Send + 'scope,
-        T: Send + 'scope {
+        T: Send + 'scope,
+    {
         self.spawn(move || f(priority.set_for_current()))
     }
 }
@@ -800,7 +814,12 @@ where
 ///     });
 /// });
 /// ```
-pub fn spawn_scoped<'scope, 'env, F, T>(scope: &'scope std::thread::Scope<'scope, 'env>, priority: ThreadPriority, f: F) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
+#[rustversion::since(1.63)]
+pub fn spawn_scoped<'scope, 'env, F, T>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    priority: ThreadPriority,
+    f: F,
+) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
 where
     F: FnOnce(Result<(), Error>) -> T,
     F: Send + 'scope,
@@ -861,7 +880,12 @@ where
 /// });
 /// thread.join();
 /// ```
-pub fn spawn_scoped_careless<'scope, 'env, F, T>(scope: &'scope std::thread::Scope<'scope, 'env>, priority: ThreadPriority, f: F) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
+#[rustversion::since(1.63)]
+pub fn spawn_scoped_careless<'scope, 'env, F, T>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    priority: ThreadPriority,
+    f: F,
+) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
 where
     F: FnOnce() -> T,
     F: Send + 'scope,
