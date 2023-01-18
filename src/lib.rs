@@ -300,6 +300,26 @@ impl Thread {
     }
 }
 
+/// A wrapper producing a closure where the input priority set result is logged on error, but no other handling is performed
+fn careless_wrapper<F, T>(f: F) -> impl FnOnce(Result<(), Error>) -> T
+where
+    F: FnOnce() -> T + Send,
+    T: Send,
+{
+    |priority_set_result| {
+        if let Err(e) = priority_set_result {
+            log::warn!(
+                "Couldn't set the priority for the thread with Rust Thread ID {:?} named {:?}: {:?}",
+                std::thread::current().id(),
+                std::thread::current().name(),
+                e,
+            );
+        }
+
+        f()
+    }
+}
+
 /// A copy of the [`std::thread::Builder`] builder allowing to set priority settings.
 ///
 /// ```rust
@@ -420,21 +440,14 @@ impl ThreadBuilder {
         self
     }
 
-    /// Spawns a new thread by taking ownership of the `Builder`, and returns an
-    /// [`std::io::Result`] to its [`std::thread::JoinHandle`].
-    ///
-    /// See [`std::thread::Builder::spawn`]
     #[cfg(unix)]
-    pub fn spawn<F, T>(mut self, f: F) -> std::io::Result<std::thread::JoinHandle<T>>
+    fn spawn_wrapper<F, T>(self, f: F) -> impl FnOnce() -> T
     where
         F: FnOnce(Result<(), Error>) -> T,
-        F: Send + 'static,
-        T: Send + 'static,
+        F: Send,
+        T: Send,
     {
-        let priority = self.priority;
-        let policy = self.policy;
-
-        self.build_std().spawn(move || match (priority, policy) {
+        move || match (self.priority, self.policy) {
             (Some(priority), Some(policy)) => f(set_thread_priority_and_policy(
                 thread_native_id(),
                 priority,
@@ -445,41 +458,45 @@ impl ThreadBuilder {
                 unimplemented!("Setting the policy separately isn't currently supported.");
             }
             _ => f(Ok(())),
-        })
+        }
+    }
+
+    #[cfg(windows)]
+    fn spawn_wrapper<F, T>(self, f: F) -> impl FnOnce() -> T
+    where
+        F: FnOnce(Result<(), Error>) -> T,
+        F: Send,
+        T: Send,
+    {
+        move || {
+            let mut result = match (self.priority, self.winapi_priority) {
+                (Some(priority), None) => set_thread_priority(thread_native_id(), priority),
+                (_, Some(priority)) => set_winapi_thread_priority(thread_native_id(), priority),
+                _ => Ok(()),
+            };
+            if result.is_ok() && self.boost_enabled {
+                result = set_current_thread_priority_boost(self.boost_enabled);
+            }
+            if result.is_ok() {
+                if let Some(ideal_processor) = self.ideal_processor {
+                    result = set_current_thread_ideal_processor(ideal_processor).map(|_| ());
+                }
+            }
+            f(result)
+        }
     }
 
     /// Spawns a new thread by taking ownership of the `Builder`, and returns an
     /// [`std::io::Result`] to its [`std::thread::JoinHandle`].
     ///
     /// See [`std::thread::Builder::spawn`]
-    #[cfg(windows)]
     pub fn spawn<F, T>(mut self, f: F) -> std::io::Result<std::thread::JoinHandle<T>>
     where
         F: FnOnce(Result<(), Error>) -> T,
         F: Send + 'static,
         T: Send + 'static,
     {
-        let thread_priority = self.priority;
-        let winapi_priority = self.winapi_priority;
-        let boost_enabled = self.boost_enabled;
-        let ideal_processor = self.ideal_processor;
-
-        self.build_std().spawn(move || {
-            let mut result = match (thread_priority, winapi_priority) {
-                (Some(priority), None) => set_thread_priority(thread_native_id(), priority),
-                (_, Some(priority)) => set_winapi_thread_priority(thread_native_id(), priority),
-                _ => Ok(()),
-            };
-            if result.is_ok() && boost_enabled {
-                result = set_current_thread_priority_boost(boost_enabled);
-            }
-            if result.is_ok() {
-                if let Some(ideal_processor) = ideal_processor {
-                    result = set_current_thread_ideal_processor(ideal_processor).map(|_| ());
-                }
-            }
-            f(result)
-        })
+        self.build_std().spawn(self.spawn_wrapper(f))
     }
 
     /// Spawns a new scoped thread by taking ownership of the `Builder`, and returns an
@@ -487,7 +504,6 @@ impl ThreadBuilder {
     ///
     /// See [`std::thread::Builder::spawn_scoped`]
     #[rustversion::since(1.63)]
-    #[cfg(unix)]
     pub fn spawn_scoped<'scope, 'env, F, T>(
         mut self,
         scope: &'scope std::thread::Scope<'scope, 'env>,
@@ -498,61 +514,7 @@ impl ThreadBuilder {
         F: Send + 'scope,
         T: Send + 'scope,
     {
-        let priority = self.priority;
-        let policy = self.policy;
-
-        self.build_std()
-            .spawn_scoped(scope, move || match (priority, policy) {
-                (Some(priority), Some(policy)) => f(set_thread_priority_and_policy(
-                    thread_native_id(),
-                    priority,
-                    policy,
-                )),
-                (Some(priority), None) => f(priority.set_for_current()),
-                (None, Some(_policy)) => {
-                    unimplemented!("Setting the policy separately isn't currently supported.");
-                }
-                _ => f(Ok(())),
-            })
-    }
-
-    /// Spawns a new scoped thread by taking ownership of the `Builder`, and returns an
-    /// [`std::io::Result`] to its [`std::thread::ScopedJoinHandle`].
-    ///
-    /// See [`std::thread::Builder::spawn_scoped`]
-    #[rustversion::since(1.63)]
-    #[cfg(windows)]
-    pub fn spawn_scoped<'scope, 'env, F, T>(
-        mut self,
-        scope: &'scope std::thread::Scope<'scope, 'env>,
-        f: F,
-    ) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
-    where
-        F: FnOnce(Result<(), Error>) -> T,
-        F: Send + 'scope,
-        T: Send + 'scope,
-    {
-        let thread_priority = self.priority;
-        let winapi_priority = self.winapi_priority;
-        let boost_enabled = self.boost_enabled;
-        let ideal_processor = self.ideal_processor;
-
-        self.build_std().spawn_scoped(scope, move || {
-            let mut result = match (thread_priority, winapi_priority) {
-                (Some(priority), None) => set_thread_priority(thread_native_id(), priority),
-                (_, Some(priority)) => set_winapi_thread_priority(thread_native_id(), priority),
-                _ => Ok(()),
-            };
-            if result.is_ok() && boost_enabled {
-                result = set_current_thread_priority_boost(boost_enabled);
-            }
-            if result.is_ok() {
-                if let Some(ideal_processor) = ideal_processor {
-                    result = set_current_thread_ideal_processor(ideal_processor).map(|_| ());
-                }
-            }
-            f(result)
-        })
+        self.build_std().spawn_scoped(scope, self.spawn_wrapper(f))
     }
 
     fn build_std(&mut self) -> std::thread::Builder {
@@ -579,18 +541,7 @@ impl ThreadBuilder {
         F: Send + 'static,
         T: Send + 'static,
     {
-        self.spawn(|priority_set_result| {
-            if let Err(e) = priority_set_result {
-                log::warn!(
-                    "Couldn't set the priority for the thread with Rust Thread ID {:?} named {:?}: {:?}",
-                    std::thread::current().id(),
-                    std::thread::current().name(),
-                    e,
-                );
-            }
-
-            f()
-        })
+        self.spawn(careless_wrapper(f))
     }
 
     /// Spawns a new scoped thread by taking ownership of the `Builder`, and returns an
@@ -608,18 +559,7 @@ impl ThreadBuilder {
         F: Send + 'scope,
         T: Send + 'scope,
     {
-        self.spawn_scoped(scope, |priority_set_result| {
-            if let Err(e) = priority_set_result {
-                log::warn!(
-                    "Couldn't set the priority for the thread with Rust Thread ID {:?} named {:?}: {:?}",
-                    std::thread::current().id(),
-                    std::thread::current().name(),
-                    e,
-                );
-            }
-
-            f()
-        })
+        self.spawn_scoped(scope, careless_wrapper(f))
     }
 }
 
@@ -850,18 +790,7 @@ where
     F: Send + 'static,
     T: Send + 'static,
 {
-    std::thread::spawn(move || {
-        if let Err(e) = priority.set_for_current() {
-            log::warn!(
-                "Couldn't set the priority for the thread with Rust Thread ID {:?} named {:?}: {:?}",
-                std::thread::current().id(),
-                std::thread::current().name(),
-                e,
-            );
-        }
-
-        f()
-    })
+    std::thread::spawn(move || careless_wrapper(f)(priority.set_for_current()))
 }
 
 /// Spawns a scoped thread with the specified priority.
@@ -891,16 +820,5 @@ where
     F: Send + 'scope,
     T: Send + 'scope,
 {
-    Ok(scope.spawn(move || {
-        if let Err(e) = priority.set_for_current() {
-            log::warn!(
-                "Couldn't set the priority for the thread with Rust Thread ID {:?} named {:?}: {:?}",
-                std::thread::current().id(),
-                std::thread::current().name(),
-                e,
-            );
-        }
-
-        f()
-    }))
+    Ok(scope.spawn(move || careless_wrapper(f)(priority.set_for_current())))
 }
