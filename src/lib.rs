@@ -344,6 +344,36 @@ where
 ///         println!("We don't care about the priority result.");
 /// }).unwrap();
 /// thread.join();
+///
+/// // Scoped thread is also supported if the compiler version is at least 1.63.
+/// let x = 0;
+/// std::thread::scope(|s|{
+///     let thread = ThreadBuilder::default()
+///         .name("MyThread")
+///         .priority(ThreadPriority::Max)
+///         .spawn_scoped(|result| {
+////            // This is printed out from within the spawned thread.
+///             println!("Set priority result: {:?}", result);
+///             assert!(result.is_ok());
+///             x += 1;
+///     }).unwrap();
+///     thread.join();
+/// });
+/// assert_eq!(x, 1);
+///
+/// // Scoped thread also has a "careless" mode.
+/// std::thread::scope(|s|{
+///     let thread = ThreadBuilder::default()
+///         .name("MyThread")
+///         .priority(ThreadPriority::Max)
+///         .spawn_scoped_careless(|| {
+///             // This is printed out from within the spawned thread.
+///             println!("We don't care about the priority result.");
+///             x += 1;
+///     }).unwrap();
+///     thread.join();
+/// });
+/// assert_eq!(x, 2);
 /// ```
 #[derive(Clone, Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ThreadBuilder {
