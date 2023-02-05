@@ -47,6 +47,34 @@
 //!         assert!(result.is_ok());
 //! }).unwrap();
 //! thread.join();
+//!
+//! // This also support scoped thread.
+//! let x = 0;
+//! std::thread::scope(|s|{
+//!     std::thread::Builder::new()
+//!         .name("MyNewThread".to_owned())
+//!         .spawn_scoped_with_priority(s, ThreadPriority::Max, |result| {
+//!             // This is printed out from within the spawned thread.
+//!             println!("Set priority result: {:?}", result);
+//!             assert!(result.is_ok());
+//!             dbg!(&x);
+//!     }).unwrap();
+//! });
+//! ```
+//!
+//! ### Building a thread using the [`ThreadScopeExt`] trait
+//!
+//! ```rust,no_run
+//! use thread_priority::*;
+//! let x = 0;
+//! std::thread::scope(|s|{
+//!     s.spawn_with_priority(ThreadPriority::Max, |result| {
+//!             // This is printed out from within the spawned thread.
+//!             println!("Set priority result: {:?}", result);
+//!             assert!(result.is_ok());
+//!             dbg!(&x);
+//!     });
+//! });
 //! ```
 //!
 //! ### Building a thread using the [`ThreadBuilder`].
@@ -73,6 +101,36 @@
 //!         println!("We don't care about the priority result.");
 //! }).unwrap();
 //! thread.join();
+//!
+//! // Scoped thread is also supported if the compiler version is at least 1.63.
+//! let mut x = 0;
+//! std::thread::scope(|s|{
+//!     let thread = ThreadBuilder::default()
+//!         .name("MyThread")
+//!         .priority(ThreadPriority::Max)
+//!         .spawn_scoped(s, |result| {
+//!             // This is printed out from within the spawned thread.
+//!             println!("Set priority result: {:?}", result);
+//!             assert!(result.is_ok());
+//!             x += 1;
+//!     }).unwrap();
+//!     thread.join();
+//! });
+//! assert_eq!(x, 1);
+//!
+//! // Scoped thread also has a "careless" mode.
+//! std::thread::scope(|s|{
+//!     let thread = ThreadBuilder::default()
+//!         .name("MyThread")
+//!         .priority(ThreadPriority::Max)
+//!         .spawn_scoped_careless(s, || {
+//!             // This is printed out from within the spawned thread.
+//!             println!("We don't care about the priority result.");
+//!             x += 1;
+//!     }).unwrap();
+//!     thread.join();
+//! });
+//! assert_eq!(x, 2);
 //! ```
 //!
 //! ### Using [`ThreadExt`] trait on the current thread
@@ -358,7 +416,7 @@ where
 ///         .name("MyThread")
 ///         .priority(ThreadPriority::Max)
 ///         .spawn_scoped(s, |result| {
-////            // This is printed out from within the spawned thread.
+///             // This is printed out from within the spawned thread.
 ///             println!("Set priority result: {:?}", result);
 ///             assert!(result.is_ok());
 ///             x += 1;
@@ -701,25 +759,22 @@ impl ThreadBuilderExt for std::thread::Builder {
 pub trait ThreadScopeExt<'scope> {
     /// Spawn a scoped thread with set priority. The passed functor `f` is executed in the spawned thread and
     /// receives as the only argument the result of setting the thread priority.
-    /// See [`std::thread::Builder::spawn_scoped`] and [`ThreadPriority::set_for_current`] for more info.
+    /// See [`std::thread::Scope::spawn`] and [`ThreadPriority::set_for_current`] for more info.
     ///
     /// # Example
     ///
     /// ```rust
     /// use thread_priority::*;
-    /// use thread_priority::ThreadBuilderExt;
     ///
     /// let x = 0;
     ///
     /// std::thread::scope(|s|{
-    ///     std::thread::Builder::new()
-    ///         .name("MyNewThread".to_owned())
-    ///         .spawn_scoped_with_priority(s, ThreadPriority::Max, |result| {
+    ///     s.spawn_with_priority(ThreadPriority::Max, |result| {
     ///             // This is printed out from within the spawned thread.
     ///             println!("Set priority result: {:?}", result);
     ///             assert!(result.is_ok());
     ///             dbg!(&x);
-    ///     }).unwrap();
+    ///     });
     /// });
     /// ```
     fn spawn_with_priority<F, T>(
@@ -839,11 +894,15 @@ where
 /// ```rust
 /// use thread_priority::*;
 ///
-/// let thread = spawn_careless(ThreadPriority::Max, || {
-///     // This is printed out from within the spawned thread.
-///     println!("We don't care about the priority result.");
+/// let x = 0;
+///
+/// std::thread::scope(|s| {
+///     spawn_scoped_careless(s, ThreadPriority::Max, || {
+///         // This is printed out from within the spawned thread.
+///         println!("We don't care about the priority result.");
+///         dbg!(&x);
+///     });
 /// });
-/// thread.join();
 /// ```
 #[rustversion::since(1.63)]
 pub fn spawn_scoped_careless<'scope, 'env, F, T>(
