@@ -344,14 +344,20 @@ where
 ///         println!("We don't care about the priority result.");
 /// }).unwrap();
 /// thread.join();
+/// ```
+///
+/// If the compiler version is at least 1.63, the scoped thread support is also enabled.
+///
+/// ```rust
+/// use thread_priority::*;
 ///
 /// // Scoped thread is also supported if the compiler version is at least 1.63.
-/// let x = 0;
+/// let mut x = 0;
 /// std::thread::scope(|s|{
 ///     let thread = ThreadBuilder::default()
 ///         .name("MyThread")
 ///         .priority(ThreadPriority::Max)
-///         .spawn_scoped(|result| {
+///         .spawn_scoped(s, |result| {
 ////            // This is printed out from within the spawned thread.
 ///             println!("Set priority result: {:?}", result);
 ///             assert!(result.is_ok());
@@ -366,7 +372,7 @@ where
 ///     let thread = ThreadBuilder::default()
 ///         .name("MyThread")
 ///         .priority(ThreadPriority::Max)
-///         .spawn_scoped_careless(|| {
+///         .spawn_scoped_careless(s, || {
 ///             // This is printed out from within the spawned thread.
 ///             println!("We don't care about the priority result.");
 ///             x += 1;
