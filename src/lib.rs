@@ -47,6 +47,34 @@
 //!         assert!(result.is_ok());
 //! }).unwrap();
 //! thread.join();
+//!
+//! // This also support scoped thread.
+//! let x = 0;
+//! std::thread::scope(|s|{
+//!     std::thread::Builder::new()
+//!         .name("MyNewThread".to_owned())
+//!         .spawn_scoped_with_priority(s, ThreadPriority::Max, |result| {
+//!             // This is printed out from within the spawned thread.
+//!             println!("Set priority result: {:?}", result);
+//!             assert!(result.is_ok());
+//!             dbg!(&x);
+//!     }).unwrap();
+//! });
+//! ```
+//!
+//! ### Building a thread using the [`ThreadScopeExt`] trait
+//!
+//! ```rust,no_run
+//! use thread_priority::*;
+//! let x = 0;
+//! std::thread::scope(|s|{
+//!     s.spawn_with_priority(ThreadPriority::Max, |result| {
+//!             // This is printed out from within the spawned thread.
+//!             println!("Set priority result: {:?}", result);
+//!             assert!(result.is_ok());
+//!             dbg!(&x);
+//!     });
+//! });
 //! ```
 //!
 //! ### Building a thread using the [`ThreadBuilder`].
@@ -73,6 +101,36 @@
 //!         println!("We don't care about the priority result.");
 //! }).unwrap();
 //! thread.join();
+//!
+//! // Scoped thread is also supported if the compiler version is at least 1.63.
+//! let mut x = 0;
+//! std::thread::scope(|s|{
+//!     let thread = ThreadBuilder::default()
+//!         .name("MyThread")
+//!         .priority(ThreadPriority::Max)
+//!         .spawn_scoped(s, |result| {
+//!             // This is printed out from within the spawned thread.
+//!             println!("Set priority result: {:?}", result);
+//!             assert!(result.is_ok());
+//!             x += 1;
+//!     }).unwrap();
+//!     thread.join();
+//! });
+//! assert_eq!(x, 1);
+//!
+//! // Scoped thread also has a "careless" mode.
+//! std::thread::scope(|s|{
+//!     let thread = ThreadBuilder::default()
+//!         .name("MyThread")
+//!         .priority(ThreadPriority::Max)
+//!         .spawn_scoped_careless(s, || {
+//!             // This is printed out from within the spawned thread.
+//!             println!("We don't care about the priority result.");
+//!             x += 1;
+//!     }).unwrap();
+//!     thread.join();
+//! });
+//! assert_eq!(x, 2);
 //! ```
 //!
 //! ### Using [`ThreadExt`] trait on the current thread
@@ -300,6 +358,26 @@ impl Thread {
     }
 }
 
+/// A wrapper producing a closure where the input priority set result is logged on error, but no other handling is performed
+fn careless_wrapper<F, T>(f: F) -> impl FnOnce(Result<(), Error>) -> T
+where
+    F: FnOnce() -> T + Send,
+    T: Send,
+{
+    |priority_set_result| {
+        if let Err(e) = priority_set_result {
+            log::warn!(
+                "Couldn't set the priority for the thread with Rust Thread ID {:?} named {:?}: {:?}",
+                std::thread::current().id(),
+                std::thread::current().name(),
+                e,
+            );
+        }
+
+        f()
+    }
+}
+
 /// A copy of the [`std::thread::Builder`] builder allowing to set priority settings.
 ///
 /// ```rust
@@ -324,6 +402,42 @@ impl Thread {
 ///         println!("We don't care about the priority result.");
 /// }).unwrap();
 /// thread.join();
+/// ```
+///
+/// If the compiler version is at least 1.63, the scoped thread support is also enabled.
+///
+/// ```rust
+/// use thread_priority::*;
+///
+/// // Scoped thread is also supported if the compiler version is at least 1.63.
+/// let mut x = 0;
+/// std::thread::scope(|s|{
+///     let thread = ThreadBuilder::default()
+///         .name("MyThread")
+///         .priority(ThreadPriority::Max)
+///         .spawn_scoped(s, |result| {
+///             // This is printed out from within the spawned thread.
+///             println!("Set priority result: {:?}", result);
+///             assert!(result.is_ok());
+///             x += 1;
+///     }).unwrap();
+///     thread.join();
+/// });
+/// assert_eq!(x, 1);
+///
+/// // Scoped thread also has a "careless" mode.
+/// std::thread::scope(|s|{
+///     let thread = ThreadBuilder::default()
+///         .name("MyThread")
+///         .priority(ThreadPriority::Max)
+///         .spawn_scoped_careless(s, || {
+///             // This is printed out from within the spawned thread.
+///             println!("We don't care about the priority result.");
+///             x += 1;
+///     }).unwrap();
+///     thread.join();
+/// });
+/// assert_eq!(x, 2);
 /// ```
 #[derive(Clone, Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ThreadBuilder {
@@ -420,21 +534,14 @@ impl ThreadBuilder {
         self
     }
 
-    /// Spawns a new thread by taking ownership of the `Builder`, and returns an
-    /// [`std::io::Result`] to its [`std::thread::JoinHandle`].
-    ///
-    /// See [`std::thread::Builder::spawn`]
     #[cfg(unix)]
-    pub fn spawn<F, T>(mut self, f: F) -> std::io::Result<std::thread::JoinHandle<T>>
+    fn spawn_wrapper<F, T>(self, f: F) -> impl FnOnce() -> T
     where
         F: FnOnce(Result<(), Error>) -> T,
-        F: Send + 'static,
-        T: Send + 'static,
+        F: Send,
+        T: Send,
     {
-        let priority = self.priority;
-        let policy = self.policy;
-
-        self.build_std().spawn(move || match (priority, policy) {
+        move || match (self.priority, self.policy) {
             (Some(priority), Some(policy)) => f(set_thread_priority_and_policy(
                 thread_native_id(),
                 priority,
@@ -445,41 +552,63 @@ impl ThreadBuilder {
                 unimplemented!("Setting the policy separately isn't currently supported.");
             }
             _ => f(Ok(())),
-        })
+        }
+    }
+
+    #[cfg(windows)]
+    fn spawn_wrapper<F, T>(self, f: F) -> impl FnOnce() -> T
+    where
+        F: FnOnce(Result<(), Error>) -> T,
+        F: Send,
+        T: Send,
+    {
+        move || {
+            let mut result = match (self.priority, self.winapi_priority) {
+                (Some(priority), None) => set_thread_priority(thread_native_id(), priority),
+                (_, Some(priority)) => set_winapi_thread_priority(thread_native_id(), priority),
+                _ => Ok(()),
+            };
+            if result.is_ok() && self.boost_enabled {
+                result = set_current_thread_priority_boost(self.boost_enabled);
+            }
+            if result.is_ok() {
+                if let Some(ideal_processor) = self.ideal_processor {
+                    result = set_current_thread_ideal_processor(ideal_processor).map(|_| ());
+                }
+            }
+            f(result)
+        }
     }
 
     /// Spawns a new thread by taking ownership of the `Builder`, and returns an
     /// [`std::io::Result`] to its [`std::thread::JoinHandle`].
     ///
     /// See [`std::thread::Builder::spawn`]
-    #[cfg(windows)]
     pub fn spawn<F, T>(mut self, f: F) -> std::io::Result<std::thread::JoinHandle<T>>
     where
         F: FnOnce(Result<(), Error>) -> T,
         F: Send + 'static,
         T: Send + 'static,
     {
-        let thread_priority = self.priority;
-        let winapi_priority = self.winapi_priority;
-        let boost_enabled = self.boost_enabled;
-        let ideal_processor = self.ideal_processor;
+        self.build_std().spawn(self.spawn_wrapper(f))
+    }
 
-        self.build_std().spawn(move || {
-            let mut result = match (thread_priority, winapi_priority) {
-                (Some(priority), None) => set_thread_priority(thread_native_id(), priority),
-                (_, Some(priority)) => set_winapi_thread_priority(thread_native_id(), priority),
-                _ => Ok(()),
-            };
-            if result.is_ok() && boost_enabled {
-                result = set_current_thread_priority_boost(boost_enabled);
-            }
-            if result.is_ok() {
-                if let Some(ideal_processor) = ideal_processor {
-                    result = set_current_thread_ideal_processor(ideal_processor).map(|_| ());
-                }
-            }
-            f(result)
-        })
+    /// Spawns a new scoped thread by taking ownership of the `Builder`, and returns an
+    /// [`std::io::Result`] to its [`std::thread::ScopedJoinHandle`].
+    ///
+    /// See [`std::thread::Builder::spawn_scoped`]
+    #[rustversion::since(1.63)]
+    pub fn spawn_scoped<'scope, 'env, F, T>(
+        mut self,
+        scope: &'scope std::thread::Scope<'scope, 'env>,
+        f: F,
+    ) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
+    where
+        F: FnOnce(Result<(), Error>) -> T,
+        F: Send + 'scope,
+        T: Send + 'scope,
+    {
+        self.build_std().spawn_scoped(scope, self.spawn_wrapper(f))
     }
 
     fn build_std(&mut self) -> std::thread::Builder {
@@ -506,18 +635,25 @@ impl ThreadBuilder {
         F: Send + 'static,
         T: Send + 'static,
     {
-        self.spawn(|priority_set_result| {
-            if let Err(e) = priority_set_result {
-                log::warn!(
-                    "Couldn't set the priority for the thread with Rust Thread ID {:?} named {:?}: {:?}",
-                    std::thread::current().id(),
-                    std::thread::current().name(),
-                    e,
-                );
-            }
+        self.spawn(careless_wrapper(f))
+    }
 
-            f()
-        })
+    /// Spawns a new scoped thread by taking ownership of the `Builder`, and returns an
+    /// [`std::io::Result`] to its [`std::thread::ScopedJoinHandle`].
+    ///
+    /// See [`std::thread::Builder::spawn_scoped`]
+    #[rustversion::since(1.63)]
+    pub fn spawn_scoped_careless<'scope, 'env, F, T>(
+        self,
+        scope: &'scope std::thread::Scope<'scope, 'env>,
+        f: F,
+    ) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
+    where
+        F: FnOnce() -> T,
+        F: Send + 'scope,
+        T: Send + 'scope,
+    {
+        self.spawn_scoped(scope, careless_wrapper(f))
     }
 }
 
@@ -551,6 +687,41 @@ pub trait ThreadBuilderExt {
         F: FnOnce(Result<(), Error>) -> T,
         F: Send + 'static,
         T: Send + 'static;
+
+    /// Spawn a scoped thread with set priority. The passed functor `f` is executed in the spawned thread and
+    /// receives as the only argument the result of setting the thread priority.
+    /// See [`std::thread::Builder::spawn_scoped`] and [`ThreadPriority::set_for_current`] for more info.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use thread_priority::*;
+    /// use thread_priority::ThreadBuilderExt;
+    ///
+    /// let x = 0;
+    ///
+    /// std::thread::scope(|s|{
+    ///     std::thread::Builder::new()
+    ///         .name("MyNewThread".to_owned())
+    ///         .spawn_scoped_with_priority(s, ThreadPriority::Max, |result| {
+    ///             // This is printed out from within the spawned thread.
+    ///             println!("Set priority result: {:?}", result);
+    ///             assert!(result.is_ok());
+    ///             dbg!(&x);
+    ///     }).unwrap();
+    /// });
+    /// ```
+    #[rustversion::since(1.63)]
+    fn spawn_scoped_with_priority<'scope, 'env, F, T>(
+        self,
+        scope: &'scope std::thread::Scope<'scope, 'env>,
+        priority: ThreadPriority,
+        f: F,
+    ) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
+    where
+        F: FnOnce(Result<(), Error>) -> T,
+        F: Send + 'scope,
+        T: Send + 'scope;
 }
 
 impl ThreadBuilderExt for std::thread::Builder {
@@ -563,6 +734,71 @@ impl ThreadBuilderExt for std::thread::Builder {
         F: FnOnce(Result<(), Error>) -> T,
         F: Send + 'static,
         T: Send + 'static,
+    {
+        self.spawn(move || f(priority.set_for_current()))
+    }
+
+    #[rustversion::since(1.63)]
+    fn spawn_scoped_with_priority<'scope, 'env, F, T>(
+        self,
+        scope: &'scope std::thread::Scope<'scope, 'env>,
+        priority: ThreadPriority,
+        f: F,
+    ) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
+    where
+        F: FnOnce(Result<(), Error>) -> T,
+        F: Send + 'scope,
+        T: Send + 'scope,
+    {
+        self.spawn_scoped(scope, move || f(priority.set_for_current()))
+    }
+}
+
+/// Adds scoped thread building functions using the priority.
+#[rustversion::since(1.63)]
+pub trait ThreadScopeExt<'scope> {
+    /// Spawn a scoped thread with set priority. The passed functor `f` is executed in the spawned thread and
+    /// receives as the only argument the result of setting the thread priority.
+    /// See [`std::thread::Scope::spawn`] and [`ThreadPriority::set_for_current`] for more info.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use thread_priority::*;
+    ///
+    /// let x = 0;
+    ///
+    /// std::thread::scope(|s|{
+    ///     s.spawn_with_priority(ThreadPriority::Max, |result| {
+    ///             // This is printed out from within the spawned thread.
+    ///             println!("Set priority result: {:?}", result);
+    ///             assert!(result.is_ok());
+    ///             dbg!(&x);
+    ///     });
+    /// });
+    /// ```
+    fn spawn_with_priority<F, T>(
+        &'scope self,
+        priority: ThreadPriority,
+        f: F,
+    ) -> std::thread::ScopedJoinHandle<'scope, T>
+    where
+        F: FnOnce(Result<(), Error>) -> T,
+        F: Send + 'scope,
+        T: Send + 'scope;
+}
+
+#[rustversion::since(1.63)]
+impl<'scope, 'env> ThreadScopeExt<'scope> for std::thread::Scope<'scope, 'env> {
+    fn spawn_with_priority<F, T>(
+        &'scope self,
+        priority: ThreadPriority,
+        f: F,
+    ) -> std::thread::ScopedJoinHandle<'scope, T>
+    where
+        F: FnOnce(Result<(), Error>) -> T,
+        F: Send + 'scope,
+        T: Send + 'scope,
     {
         self.spawn(move || f(priority.set_for_current()))
     }
@@ -591,6 +827,38 @@ where
     std::thread::spawn(move || f(priority.set_for_current()))
 }
 
+/// Spawns a scoped thread with the specified priority.
+///
+/// See [`ThreadBuilderExt::spawn_with_priority`].
+///
+/// ```rust
+/// use thread_priority::*;
+///
+/// let x = 0;
+///
+/// std::thread::scope(|s| {
+///     spawn_scoped(s, ThreadPriority::Max, |result| {
+///         // This is printed out from within the spawned thread.
+///         println!("Set priority result: {:?}", result);
+///         assert!(result.is_ok());
+///         dbg!(&x);
+///     });
+/// });
+/// ```
+#[rustversion::since(1.63)]
+pub fn spawn_scoped<'scope, 'env, F, T>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    priority: ThreadPriority,
+    f: F,
+) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
+where
+    F: FnOnce(Result<(), Error>) -> T,
+    F: Send + 'scope,
+    T: Send + 'scope,
+{
+    Ok(scope.spawn(move || f(priority.set_for_current())))
+}
+
 /// Spawns a thread with the specified priority.
 /// This is different from [`spawn`] in a way that the passed function doesn't
 /// need to accept the [`ThreadPriority::set_for_current`] result.
@@ -613,16 +881,39 @@ where
     F: Send + 'static,
     T: Send + 'static,
 {
-    std::thread::spawn(move || {
-        if let Err(e) = priority.set_for_current() {
-            log::warn!(
-                "Couldn't set the priority for the thread with Rust Thread ID {:?} named {:?}: {:?}",
-                std::thread::current().id(),
-                std::thread::current().name(),
-                e,
-            );
-        }
+    std::thread::spawn(move || careless_wrapper(f)(priority.set_for_current()))
+}
 
-        f()
-    })
+/// Spawns a scoped thread with the specified priority.
+/// This is different from [`spawn_scoped`] in a way that the passed function doesn't
+/// need to accept the [`ThreadPriority::set_for_current`] result.
+/// In case of an error, the error is logged using the logging facilities.
+///
+/// See [`spawn_scoped`].
+///
+/// ```rust
+/// use thread_priority::*;
+///
+/// let x = 0;
+///
+/// std::thread::scope(|s| {
+///     spawn_scoped_careless(s, ThreadPriority::Max, || {
+///         // This is printed out from within the spawned thread.
+///         println!("We don't care about the priority result.");
+///         dbg!(&x);
+///     });
+/// });
+/// ```
+#[rustversion::since(1.63)]
+pub fn spawn_scoped_careless<'scope, 'env, F, T>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    priority: ThreadPriority,
+    f: F,
+) -> std::io::Result<std::thread::ScopedJoinHandle<'scope, T>>
+where
+    F: FnOnce() -> T,
+    F: Send + 'scope,
+    T: Send + 'scope,
+{
+    Ok(scope.spawn(move || careless_wrapper(f)(priority.set_for_current())))
 }
