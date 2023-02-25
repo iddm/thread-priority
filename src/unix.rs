@@ -514,7 +514,10 @@ pub fn set_thread_priority_and_policy(
                 // set via niceness.
                 set_errno(0);
 
-                unsafe { libc::nice(fixed_priority) };
+                let ret = unsafe { libc::setpriority(libc::PRIO_PROCESS, 0, fixed_priority) };
+                if ret == 0 {
+                    return Ok(());
+                }
 
                 match errno() {
                     0 => Ok(()),
