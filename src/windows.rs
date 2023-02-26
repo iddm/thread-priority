@@ -130,6 +130,34 @@ impl From<WinAPIThreadPriority> for crate::ThreadPriorityOsValue {
     }
 }
 
+/// Represents a logical processor in a processor group.
+pub struct ProcessorNumber(winapi::um::winnt::PROCESSOR_NUMBER);
+impl ProcessorNumber {
+    /// Creates a processor number description object.
+    ///
+    /// Arguments:
+    ///
+    /// - Group: The processor group to which the logical processor is assigned.
+    /// - Number: The number of the logical processor relative to the group.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use thread_priority::windows::ProcessorNumber;
+    ///
+    /// assert_eq!(ProcessorNumber::with_group_and_number(group, number), );
+    /// ```
+    pub fn with_group_and_number(group: winapi::shared::minwindef::WORD,
+        number: winapi::shared::minwindef::BYTE,
+    ) -> Self {
+        Self(winapi::um::winnt::PROCESSOR_NUMBER {
+            Group: group,
+            Number: number,
+            ..Default::default(),
+        })
+    }
+}
+
 /// Sets thread's priority and schedule policy.
 ///
 /// * May require privileges
@@ -342,6 +370,38 @@ pub fn set_thread_ideal_processor(
     }
 }
 
+/// Sets the ideal processor for the specified thread and optionally retrieves the previous
+/// ideal processor.
+///
+/// If there's an error, a result of
+/// [`GetLastError`](https://docs.microsoft.com/en-us/windows/win32/api/errhandlingapi/nf-errhandlingapi-getlasterror) is returned.
+/// On success, the function returns a previously assigned processor.
+///
+/// # Note
+/// The processor number starts with zero.
+///
+/// # Usage
+///
+/// ```rust
+/// use thread_priority::*;
+///
+/// let thread_id = thread_native_id();
+/// assert!(set_thread_ideal_processor(thread_id, 0).is_ok())
+/// ```
+pub fn set_thread_ideal_processor_ex(
+    native: ThreadId,
+    ideal_processor: IdealProcessor,
+) -> Result<IdealProcessor, Error> {
+    unsafe {
+        let ret = SetThreadIdealProcessor(native, ideal_processor);
+        if ret == IdealProcessor::max_value() - 1 {
+            Err(Error::OS(GetLastError() as i32))
+        } else {
+            Ok(ret)
+        }
+    }
+}
+
 /// Sets a preferred processor for a current thread. The system schedules threads on their preferred
 /// processors whenever possible.
 ///
@@ -350,6 +410,36 @@ pub fn set_current_thread_ideal_processor(
     ideal_processor: IdealProcessor,
 ) -> Result<IdealProcessor, Error> {
     set_thread_ideal_processor(thread_native_id(), ideal_processor)
+}
+
+impl std::convert::TryFrom<u32> for crate::ThreadPriorityOsValue {
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Ok(crate::ThreadPriorityOsValue(match value {
+            winbase::THREAD_MODE_BACKGROUND_BEGIN
+            | winbase::THREAD_MODE_BACKGROUND_END
+            | winbase::THREAD_PRIORITY_ABOVE_NORMAL
+            | winbase::THREAD_PRIORITY_BELOW_NORMAL
+            | winbase::THREAD_PRIORITY_HIGHEST
+            | winbase::THREAD_PRIORITY_IDLE
+            | winbase::THREAD_PRIORITY_LOWEST
+            | winbase::THREAD_PRIORITY_NORMAL
+            | winbase::THREAD_PRIORITY_TIME_CRITICAL => value,
+            _ => return Err(()),
+        }))
+    }
+}
+
+/// Sets the ideal processor for the specified thread and optionally retrieves the previous
+/// ideal processor.
+///
+/// This is a short-hand of the `set_thread_ideal_processor_ex` function for the current thread.
+/// On success returns the previously set processor number.
+pub fn set_current_thread_ideal_processor_ex(
+    ideal_processor: ProcessorNumber,
+) -> Result<ProcessorNumber, Error> {
+    set_thread_ideal_processor_ex(thread_native_id(), ideal_processor)
 }
 
 impl std::convert::TryFrom<u32> for crate::ThreadPriorityOsValue {
@@ -408,6 +498,7 @@ pub trait ThreadExt {
     fn get_native_id(&self) -> ThreadId {
         thread_native_id()
     }
+
     /// Sets current thread's ideal processor.
     /// For more info see [`set_current_thread_ideal_processor`].
     ///
@@ -421,6 +512,21 @@ pub trait ThreadExt {
         ideal_processor: IdealProcessor,
     ) -> Result<IdealProcessor, Error> {
         set_current_thread_ideal_processor(ideal_processor)
+    }
+
+    /// Sets current thread's ideal processor with additional information.
+    /// For more info see [`set_current_thread_ideal_processor_ex`].
+    ///
+    /// ```rust
+    /// use thread_priority::*;
+    ///
+    /// assert!(std::thread::current().set_ideal_processor(0).is_ok());
+    /// ```
+    fn set_ideal_processor(
+        &self,
+        ideal_processor: IdealProcessor,
+    ) -> Result<IdealProcessor, Error> {
+        set_current_thread_ideal_processor_ex(ideal_processor)
     }
 
     /// Sets current thread's priority boost.
