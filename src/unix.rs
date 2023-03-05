@@ -131,6 +131,8 @@ bitflags::bitflags! {
         const DEADLINE_OVERRUN = 0x04;
     }
 }
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
 impl Default for DeadlineFlags {
     fn default() -> Self {
         Self::empty()
@@ -138,6 +140,7 @@ impl Default for DeadlineFlags {
 }
 
 /// Returns scheduling attributes for the current thread.
+#[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn get_thread_scheduling_attributes() -> Result<SchedAttr, Error> {
     let mut sched_attr = SchedAttr::default();
     let current_thread = 0;
