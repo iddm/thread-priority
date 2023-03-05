@@ -17,6 +17,7 @@ Is `1.46`. If you need any help making it possible to compile with `1.36` please
 - OpenBSD
 - NetBSD
 - macOS
+- iOS
 - Windows
 
 ## Examples
