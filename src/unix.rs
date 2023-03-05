@@ -74,27 +74,27 @@ fn set_errno(number: libc::c_int) {
     }
 }
 
-/// Copy of the Linux kernel's sched_attr type
-#[repr(C)]
+/// A copy of the Linux kernel's sched_attr type.
+///
+/// This structure can be used directly with the C api and is
+/// supposed to be fully-compatible.
 #[derive(Debug, Default)]
 #[cfg(any(target_os = "linux", target_os = "android"))]
+#[repr(C)]
 pub struct SchedAttr {
     size: u32,
     sched_policy: u32,
     sched_flags: u64,
-
     /// for SCHED_NORMAL and SCHED_BATCH
     sched_nice: i32,
     /// for SCHED_FIFO, SCHED_RR
     sched_priority: u32,
-
     /// for SCHED_DEADLINE
     sched_runtime: u64,
     /// for SCHED_DEADLINE
     sched_deadline: u64,
     /// for SCHED_DEADLINE
     sched_period: u64,
-
     /// Utilization hint
     sched_util_min: u32,
     /// Utilization hint
@@ -113,6 +113,48 @@ impl ScheduleParams {
             sched_priority: sched_param.sched_priority,
         }
     }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+bitflags::bitflags! {
+    /// Flags for controlling Deadline scheduling behavior.
+    #[repr(transparent)]
+    pub struct DeadlineFlags: u64 {
+        /// Children created by [`libc::fork`] will not inherit privileged
+        /// scheduling policies.
+        const RESET_ON_FORK = 0x01;
+        /// The thread may reclaim bandwidth that is unused by another
+        /// realtime thread.
+        const RECLAIM = 0x02;
+        /// Allows a task to get informed about runtime overruns through the
+        /// delivery of SIGXCPU signals.
+        const DEADLINE_OVERRUN = 0x04;
+    }
+}
+impl Default for DeadlineFlags {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+/// Returns scheduling attributes for the current thread.
+pub fn get_thread_scheduling_attributes() -> Result<SchedAttr, Error> {
+    let mut sched_attr = SchedAttr::default();
+    let current_thread = 0;
+    let flags = 0;
+    let ret = unsafe {
+        libc::syscall(
+            libc::SYS_sched_getattr,
+            current_thread,
+            &mut sched_attr as *mut _,
+            std::mem::size_of::<SchedAttr>() as u32,
+            flags,
+        )
+    };
+    if ret < 0 {
+        return Err(Error::OS(errno()));
+    }
+    Ok(sched_attr)
 }
 
 /// The following "real-time" policies are also supported, for special time-critical applications
@@ -380,11 +422,7 @@ impl ThreadPriority {
                 any(target_os = "linux", target_os = "android"),
                 not(target_arch = "wasm32")
             ))]
-            ThreadPriority::Deadline {
-                runtime: _,
-                deadline: _,
-                period: _,
-            } => Err(Error::Priority(
+            ThreadPriority::Deadline { .. } => Err(Error::Priority(
                 "Deadline is non-POSIX and cannot be converted.",
             )),
         };
@@ -406,16 +444,18 @@ fn set_thread_priority_and_policy_deadline(
 ) -> Result<(), Error> {
     use std::convert::TryInto as _;
 
-    let (runtime, deadline, period) = match priority {
+    let (runtime, deadline, period, flags) = match priority {
         ThreadPriority::Deadline {
             runtime,
             deadline,
             period,
+            flags,
         } => (|| {
             Ok((
                 runtime.as_nanos().try_into()?,
                 deadline.as_nanos().try_into()?,
                 period.as_nanos().try_into()?,
+                flags,
             ))
         })()
         .map_err(|_: std::num::TryFromIntError| {
@@ -431,22 +471,14 @@ fn set_thread_priority_and_policy_deadline(
     let sched_attr = SchedAttr {
         size: std::mem::size_of::<SchedAttr>() as u32,
         sched_policy: RealtimeThreadSchedulePolicy::Deadline.to_posix() as u32,
-
         sched_runtime: runtime,
         sched_deadline: deadline,
         sched_period: period,
-
+        sched_flags: flags.bits(),
         ..Default::default()
     };
-    let ret = unsafe {
-        libc::syscall(
-            libc::SYS_sched_setattr,
-            tid,
-            &sched_attr as *const _,
-            // we are not setting SCHED_FLAG_RECLAIM nor SCHED_FLAG_DL_OVERRUN
-            0,
-        ) as i32
-    };
+    let ret =
+        unsafe { libc::syscall(libc::SYS_sched_setattr, tid, &sched_attr as *const _, 0) as i32 };
 
     match ret {
         0 => Ok(()),
@@ -741,30 +773,20 @@ mod tests {
                 runtime: Duration::from_millis(1),
                 deadline: Duration::from_millis(10),
                 period: Duration::from_millis(100),
+                flags: DeadlineFlags::RESET_ON_FORK,
             },
             ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline)
         )
         .is_ok());
 
-        // now we check the return values
-        unsafe {
-            let mut sched_attr = SchedAttr::default();
-            let ret = libc::syscall(
-                libc::SYS_sched_getattr,
-                0, // current thread
-                &mut sched_attr as *mut _,
-                std::mem::size_of::<SchedAttr>() as u32,
-                0, // flags must be 0
-            );
-
-            assert!(ret >= 0);
-            assert_eq!(
-                sched_attr.sched_policy,
-                RealtimeThreadSchedulePolicy::Deadline.to_posix() as u32
-            );
-            assert_eq!(sched_attr.sched_runtime, 1 * 10_u64.pow(6));
-            assert_eq!(sched_attr.sched_deadline, 10 * 10_u64.pow(6));
-            assert_eq!(sched_attr.sched_period, 100 * 10_u64.pow(6));
-        }
+        let attributes = get_thread_scheduling_attributes().unwrap();
+        assert_eq!(
+            attributes.sched_policy,
+            RealtimeThreadSchedulePolicy::Deadline.to_posix() as u32
+        );
+        assert_eq!(attributes.sched_runtime, 1 * 10_u64.pow(6));
+        assert_eq!(attributes.sched_deadline, 10 * 10_u64.pow(6));
+        assert_eq!(attributes.sched_period, 100 * 10_u64.pow(6));
+        assert_eq!(attributes.sched_flags, DeadlineFlags::RESET_ON_FORK.bits());
     }
 }

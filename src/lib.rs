@@ -307,6 +307,8 @@ variant.
         deadline: Duration,
         /// Set this to the period of the task.
         period: Duration,
+        /// Deadline flags.
+        flags: crate::unix::DeadlineFlags,
     },
     /// Holds a value representing the maximum possible priority.
     /// Should be used with caution, it solely depends on the target
