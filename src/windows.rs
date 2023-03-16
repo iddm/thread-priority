@@ -403,7 +403,7 @@ pub trait ThreadExt {
     /// ```rust
     /// use thread_priority::*;
     ///
-    /// assert!(!std::thread::current().get_native_id().is_null());
+    /// assert!(!std::thread::current().get_native_id().unwrap().is_null());
     /// ```
     fn get_native_id(&self) -> Result<ThreadId, Error>;
 
