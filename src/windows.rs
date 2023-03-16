@@ -405,9 +405,8 @@ pub trait ThreadExt {
     ///
     /// assert!(!std::thread::current().get_native_id().is_null());
     /// ```
-    fn get_native_id(&self) -> ThreadId {
-        thread_native_id()
-    }
+    fn get_native_id(&self) -> Result<ThreadId, Error>;
+
     /// Sets current thread's ideal processor.
     /// For more info see [`set_current_thread_ideal_processor`].
     ///
@@ -437,4 +436,12 @@ pub trait ThreadExt {
 }
 
 /// Auto-implementation of this trait for the [`std::thread::Thread`].
-impl ThreadExt for std::thread::Thread {}
+impl ThreadExt for std::thread::Thread {
+    fn get_native_id(&self) -> Result<ThreadId, Error> {
+        if self.id() == std::thread::current().id() {
+            Ok(thread_native_id())
+        } else {
+            Err(Error::Priority("The `ThreadExt::get_native_id()` is currently limited to be called on the current thread."))
+        }
+    }
+}

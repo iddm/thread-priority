@@ -741,14 +741,20 @@ pub trait ThreadExt {
     /// ```rust
     /// use thread_priority::*;
     ///
-    /// assert!(std::thread::current().get_native_id() > 0);
-    fn get_native_id(&self) -> ThreadId {
-        thread_native_id()
-    }
+    /// assert!(std::thread::current().get_native_id().unwrap() > 0);
+    fn get_native_id(&self) -> Result<ThreadId, Error>;
 }
 
 /// Auto-implementation of this trait for the [`std::thread::Thread`].
-impl ThreadExt for std::thread::Thread {}
+impl ThreadExt for std::thread::Thread {
+    fn get_native_id(&self) -> Result<ThreadId, Error> {
+        if self.id() == std::thread::current().id() {
+            Ok(thread_native_id())
+        } else {
+            Err(Error::Priority("The `ThreadExt::get_native_id()` is currently limited to be called on the current thread."))
+        }
+    }
+}
 
 /// Returns current thread id, which is the current OS's native handle.
 /// It may or may not be equal or even related to rust's thread id,
