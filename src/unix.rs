@@ -413,8 +413,10 @@ impl ThreadPriority {
                     Self::to_allowed_value_for_policy(p as i32, policy).map(|v| v as u32)
                 }
                 ThreadSchedulePolicy::Normal(_) => {
+                    // Mapping a [0..100] priority into niceness [-20..20] needs reversing the ratio,
+                    // as the lowest nice is actually the highest priority.
                     let niceness_values = NICENESS_MAX.abs() + NICENESS_MIN.abs();
-                    let ratio = p as f32 / ThreadPriorityValue::MAX as f32;
+                    let ratio = 1f32 - (p as f32 / ThreadPriorityValue::MAX as f32);
                     let niceness = ((niceness_values as f32 * ratio) as i8 + NICENESS_MAX) as i32;
                     Self::to_allowed_value_for_policy(niceness, policy).map(|v| v as u32)
                 }

@@ -5,6 +5,22 @@ use std::convert::TryInto;
 use thread_priority::*;
 
 #[cfg(target_os = "linux")]
+#[test]
+fn get_and_set_priority_with_normal_and_crossplatform() {
+    let nice = unsafe { libc::getpriority(0, 0) };
+    assert_eq!(nice, 0);
+    crate::set_current_thread_priority(ThreadPriority::Crossplatform(30u8.try_into().unwrap()))
+        .unwrap();
+    let nice = unsafe { libc::getpriority(0, 0) };
+    assert!(nice > 0);
+    // Note that increasing priority requires extra permissions (e.g. sudo)
+    crate::set_current_thread_priority(ThreadPriority::Crossplatform(70u8.try_into().unwrap()))
+        .unwrap();
+    let nice = unsafe { libc::getpriority(0, 0) };
+    assert!(nice < 0);
+}
+
+#[cfg(target_os = "linux")]
 #[rstest]
 fn get_and_set_priority_with_normal_policies(
     #[values(
