@@ -304,10 +304,6 @@ impl ThreadPriority {
                 Ok(0)
             }
             ThreadSchedulePolicy::Normal(_) => {
-                // Niceness can be used, from -20 to 19, where `-20` is the maximum.
-                #[cfg(any(target_os = "linux", target_os = "android"))]
-                return Ok(NICENESS_MAX as libc::c_int);
-
                 // On macOS/iOS, it is allowed to specify the priority
                 // using sched params.
                 if cfg!(any(target_os = "macos", target_os = "ios")) {
@@ -317,15 +313,16 @@ impl ThreadPriority {
                     } else {
                         Ok(max_priority)
                     }
-                } else if cfg!(not(any(target_os = "linux", target_os = "android"))) {
+                } else if cfg!(any(target_os = "linux", target_os = "android")) {
+                    // Niceness can be used, from -20 to 19, where `-20` is the maximum.
+                    return Ok(NICENESS_MAX as libc::c_int);
+                } else {
                     // On other systems there is no notion of using niceness
                     // for just threads but for whole processes instead.
                     return Err(Error::Priority(
                         "This OS doesn't support specifying this thread priority with this policy.
                     Consider changing the scheduling policy.",
                     ));
-                } else {
-                    return Err(Error::Priority("This OS is unsupported."));
                 }
             }
             _ => {
@@ -346,11 +343,6 @@ impl ThreadPriority {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle) => Ok(0),
             ThreadSchedulePolicy::Normal(_) => {
-                // Niceness can be used, from -20 to 19, where `-20` is the maximum.
-                #[cfg(any(target_os = "linux", target_os = "android"))]
-                {
-                    Ok(NICENESS_MIN as libc::c_int)
-                }
                 // On macOS/iOS, it is allowed to specify the priority
                 // using sched params.
                 if cfg!(any(target_os = "macos", target_os = "ios")) {
@@ -360,15 +352,16 @@ impl ThreadPriority {
                     } else {
                         Ok(min_priority)
                     }
-                } else if cfg!(not(any(target_os = "linux", target_os = "android"))) {
+                } else if cfg!(any(target_os = "linux", target_os = "android")) {
+                    // Niceness can be used, from -20 to 19, where `-20` is the maximum.
+                    Ok(NICENESS_MIN as libc::c_int)
+                } else {
                     // On other systems there is no notion of using niceness
                     // for just threads but for whole processes instead.
                     return Err(Error::Priority(
                         "This OS doesn't support specifying this thread priority with this policy.
                     Consider changing the scheduling policy.",
                     ));
-                } else {
-                    return Err(Error::Priority("This OS is unsupported."));
                 }
             }
             _ => {
