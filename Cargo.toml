@@ -9,7 +9,7 @@ readme = "README.md"
 license = "MIT"
 keywords = ["thread", "schedule", "priority", "pthread"]
 categories = ["concurrency", "asynchronous", "os"]
-edition = "2018"
+edition = "2021"
 
 [dev-dependencies]
 rstest = "0.13"

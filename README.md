@@ -7,7 +7,7 @@ A simple library to control thread schedule policies and thread priority.
 If your operating system isn't yet supported, please, create an issue.
 
 ## Minimal Rust Compiler Version
-Is `1.46`. If you need any help making it possible to compile with `1.36` please reach out.
+Is `1.56`. If you need any help making it possible to compile with `1.36` please reach out.
 
 ## Supported platforms
 - Linux

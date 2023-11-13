@@ -308,13 +308,25 @@ impl ThreadPriority {
                 #[cfg(any(target_os = "linux", target_os = "android"))]
                 return Ok(NICENESS_MAX as libc::c_int);
 
-                // On other systems there is no notion of using niceness
-                // for just threads but for whole processes instead.
-                #[cfg(not(any(target_os = "linux", target_os = "android")))]
-                Err(Error::Priority(
-                    "This OS doesn't support specifying this thread priority with this policy.
+                // On macOS/iOS, it is allowed to specify the priority
+                // using sched params.
+                if cfg!(any(target_os = "macos", target_os = "ios")) {
+                    let max_priority = unsafe { libc::sched_get_priority_max(policy.to_posix()) };
+                    if max_priority < 0 {
+                        Err(Error::OS(errno()))
+                    } else {
+                        Ok(max_priority)
+                    }
+                } else if cfg!(not(any(target_os = "linux", target_os = "android"))) {
+                    // On other systems there is no notion of using niceness
+                    // for just threads but for whole processes instead.
+                    return Err(Error::Priority(
+                        "This OS doesn't support specifying this thread priority with this policy.
                     Consider changing the scheduling policy.",
-                ))
+                    ));
+                } else {
+                    return Err(Error::Priority("This OS is unsupported."));
+                }
             }
             _ => {
                 let max_priority = unsafe { libc::sched_get_priority_max(policy.to_posix()) };
@@ -339,14 +351,24 @@ impl ThreadPriority {
                 {
                     Ok(NICENESS_MIN as libc::c_int)
                 }
-                // On other systems there is no notion of using niceness
-                // for just threads but for whole processes instead.
-                #[cfg(not(any(target_os = "linux", target_os = "android")))]
-                {
-                    Err(Error::Priority(
+                // On macOS/iOS, it is allowed to specify the priority
+                // using sched params.
+                if cfg!(any(target_os = "macos", target_os = "ios")) {
+                    let min_priority = unsafe { libc::sched_get_priority_min(policy.to_posix()) };
+                    if min_priority < 0 {
+                        Err(Error::OS(errno()))
+                    } else {
+                        Ok(min_priority)
+                    }
+                } else if cfg!(not(any(target_os = "linux", target_os = "android"))) {
+                    // On other systems there is no notion of using niceness
+                    // for just threads but for whole processes instead.
+                    return Err(Error::Priority(
                         "This OS doesn't support specifying this thread priority with this policy.
                     Consider changing the scheduling policy.",
-                    ))
+                    ));
+                } else {
+                    return Err(Error::Priority("This OS is unsupported."));
                 }
             }
             _ => {
@@ -412,6 +434,20 @@ impl ThreadPriority {
                 ThreadSchedulePolicy::Realtime(_) => {
                     Self::to_allowed_value_for_policy(p as i32, policy).map(|v| v as u32)
                 }
+                // XNU and the derivatives allow to change the priority
+                // for the SCHED_OTHER policy.
+                // <https://www.usenix.org/legacy/publications/library/proceedings/bsdcon02/full_papers/gerbarg/gerbarg_html/index.html>
+                #[cfg(all(
+                    any(target_os = "macos", target_os = "ios"),
+                    not(target_arch = "wasm32")
+                ))]
+                ThreadSchedulePolicy::Normal(_) => {
+                    Self::to_allowed_value_for_policy(p as i32, policy).map(|v| v as u32)
+                }
+                #[cfg(not(all(
+                    any(target_os = "macos", target_os = "ios"),
+                    not(target_arch = "wasm32")
+                )))]
                 ThreadSchedulePolicy::Normal(_) => {
                     // Mapping a [0..100] priority into niceness [-20..20] needs reversing the ratio,
                     // as the lowest nice is actually the highest priority.
