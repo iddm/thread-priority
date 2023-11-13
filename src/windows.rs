@@ -148,8 +148,6 @@ impl From<WinAPIThreadPriority> for crate::ThreadPriorityOsValue {
 /// If there's an error, a result of
 /// [`GetLastError`](https://docs.microsoft.com/en-us/windows/win32/api/errhandlingapi/nf-errhandlingapi-getlasterror) is returned.
 pub fn set_thread_priority(native: ThreadId, priority: ThreadPriority) -> Result<(), Error> {
-    use std::convert::TryFrom;
-
     set_winapi_thread_priority(native, WinAPIThreadPriority::try_from(priority)?)
 }
 
@@ -218,8 +216,6 @@ pub fn set_current_thread_priority(priority: ThreadPriority) -> Result<(), Error
 /// assert!(get_thread_priority(thread_native_id()).is_ok());
 /// ```
 pub fn get_thread_priority(native: ThreadId) -> Result<ThreadPriority, Error> {
-    use std::convert::TryFrom;
-
     unsafe {
         let ret = GetThreadPriority(native);
         if ret as u32 != winbase::THREAD_PRIORITY_ERROR_RETURN {
@@ -244,8 +240,6 @@ pub fn get_thread_priority(native: ThreadId) -> Result<ThreadPriority, Error> {
 /// assert!(get_current_thread_priority().is_ok());
 /// ```
 pub fn get_current_thread_priority() -> Result<ThreadPriority, Error> {
-    use std::convert::TryFrom;
-
     unsafe {
         let ret = GetThreadPriority(thread_native_id());
         if ret as u32 != winbase::THREAD_PRIORITY_ERROR_RETURN {
