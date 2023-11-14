@@ -28,6 +28,13 @@ use std::mem::MaybeUninit;
 /// An alias type for a thread id.
 pub type ThreadId = libc::pthread_t;
 
+/// A constant which is evaluated to `true` if the target OS is either
+/// Linux-based or Android.
+const IS_LINUX_ANDROID: bool = cfg!(any(target_os = "linux", target_os = "android"));
+/// A constant which is evaluated to `true` if the target OS is either
+/// macOS or iOS.
+const IS_MACOS_IOS: bool = cfg!(any(target_os = "macos", target_os = "ios"));
+
 /// The maximum value possible for niceness. Threads with this value
 /// of niceness have the highest priority possible
 pub const NICENESS_MAX: i8 = -20;
@@ -71,6 +78,15 @@ fn set_errno(number: libc::c_int) {
                 compile_error!("Your OS is probably not supported.")
             }
         }
+    }
+}
+
+fn do_with_errno<F: FnOnce() -> libc::c_int>(f: F) -> Result<libc::c_int, Error> {
+    let return_value = f();
+    if return_value < 0 {
+        Err(Error::OS(errno()))
+    } else {
+        Ok(return_value)
     }
 }
 
@@ -293,86 +309,71 @@ impl ThreadSchedulePolicy {
     }
 }
 
+/// Defines the type of the priority edge value: minimum or maximum.
+#[derive(Debug, Copy, Clone)]
+pub enum PriorityPolicyEdgeValueType {
+    /// Specifies the minimum priority value for a policy.
+    Minimum,
+    /// Specifies the maximum priority value for a policy.
+    Maximum,
+}
+
 impl ThreadPriority {
     /// Returns the maximum allowed value for using with the provided policy.
     /// The returned number is in the range of allowed values.
     pub fn max_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
-        match policy {
-            #[cfg(any(target_os = "linux", target_os = "android"))]
-            ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle) => {
-                // Only `0` can be returned for `Idle` threads.
-                Ok(0)
-            }
-            ThreadSchedulePolicy::Normal(_) => {
-                // On macOS/iOS, it is allowed to specify the priority
-                // using sched params.
-                if cfg!(any(target_os = "macos", target_os = "ios")) {
-                    let max_priority = unsafe { libc::sched_get_priority_max(policy.to_posix()) };
-                    if max_priority < 0 {
-                        Err(Error::OS(errno()))
-                    } else {
-                        Ok(max_priority)
-                    }
-                } else if cfg!(any(target_os = "linux", target_os = "android")) {
-                    // Niceness can be used, from -20 to 19, where `-20` is the maximum.
-                    return Ok(NICENESS_MAX as libc::c_int);
-                } else {
-                    // On other systems there is no notion of using niceness
-                    // for just threads but for whole processes instead.
-                    return Err(Error::Priority(
-                        "This OS doesn't support specifying this thread priority with this policy.
-                    Consider changing the scheduling policy.",
-                    ));
-                }
-            }
-            _ => {
-                let max_priority = unsafe { libc::sched_get_priority_max(policy.to_posix()) };
-                if max_priority < 0 {
-                    Err(Error::OS(errno()))
-                } else {
-                    Ok(max_priority)
-                }
-            }
-        }
+        Self::get_edge_value_for_policy(policy, PriorityPolicyEdgeValueType::Maximum)
     }
 
     /// Returns the minimum allowed value for using with the provided policy.
     /// The returned number is in the range of allowed values.
     pub fn min_value_for_policy(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
+        Self::get_edge_value_for_policy(policy, PriorityPolicyEdgeValueType::Minimum)
+    }
+
+    /// Returns the edge priority for the provided policy.
+    fn get_edge_value_for_policy(
+        policy: ThreadSchedulePolicy,
+        edge: PriorityPolicyEdgeValueType,
+    ) -> Result<libc::c_int, Error> {
+        let get_edge_priority = match edge {
+            PriorityPolicyEdgeValueType::Minimum => Self::get_min_priority,
+            PriorityPolicyEdgeValueType::Maximum => Self::get_max_priority,
+        };
+
         match policy {
-            #[cfg(any(target_os = "linux", target_os = "android"))]
-            ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle) => Ok(0),
+            ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle) if IS_LINUX_ANDROID => {
+                // Only `0` can be returned for `Idle` threads on Linux/Android.
+                Ok(0)
+            }
+            ThreadSchedulePolicy::Normal(_) if IS_MACOS_IOS => {
+                // macOS/iOS allows specifying the priority using sched params.
+                get_edge_priority(policy)
+            }
+            ThreadSchedulePolicy::Normal(_) if IS_LINUX_ANDROID => {
+                // Niceness can be used on Linux/Android.
+                Ok(match edge {
+                    PriorityPolicyEdgeValueType::Minimum => NICENESS_MIN as libc::c_int,
+                    PriorityPolicyEdgeValueType::Maximum => NICENESS_MAX as libc::c_int,
+                })
+            }
             ThreadSchedulePolicy::Normal(_) => {
-                // On macOS/iOS, it is allowed to specify the priority
-                // using sched params.
-                if cfg!(any(target_os = "macos", target_os = "ios")) {
-                    let min_priority = unsafe { libc::sched_get_priority_min(policy.to_posix()) };
-                    if min_priority < 0 {
-                        Err(Error::OS(errno()))
-                    } else {
-                        Ok(min_priority)
-                    }
-                } else if cfg!(any(target_os = "linux", target_os = "android")) {
-                    // Niceness can be used, from -20 to 19, where `-20` is the maximum.
-                    Ok(NICENESS_MIN as libc::c_int)
-                } else {
-                    // On other systems there is no notion of using niceness
-                    // for just threads but for whole processes instead.
-                    return Err(Error::Priority(
-                        "This OS doesn't support specifying this thread priority with this policy.
-                    Consider changing the scheduling policy.",
-                    ));
-                }
+                Err(Error::Priority(
+                    "Unsupported thread priority for this OS. Change the scheduling policy or use a supported OS.",
+                ))
             }
-            _ => {
-                let min_priority = unsafe { libc::sched_get_priority_min(policy.to_posix()) };
-                if min_priority < 0 {
-                    Err(Error::OS(errno()))
-                } else {
-                    Ok(min_priority)
-                }
-            }
+            _ => get_edge_priority(policy),
         }
+    }
+
+    /// Returns the maximum scheduling priority for the POSIX policy.
+    fn get_max_priority(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
+        do_with_errno(|| unsafe { libc::sched_get_priority_max(policy.to_posix()) })
+    }
+
+    /// Returns the minimum scheduling priority for the POSIX policy.
+    fn get_min_priority(policy: ThreadSchedulePolicy) -> Result<libc::c_int, Error> {
+        do_with_errno(|| unsafe { libc::sched_get_priority_min(policy.to_posix()) })
     }
 
     /// Checks that the passed priority value is within the range of allowed values for using with the provided policy.
