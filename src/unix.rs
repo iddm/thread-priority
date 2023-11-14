@@ -28,13 +28,6 @@ use std::mem::MaybeUninit;
 /// An alias type for a thread id.
 pub type ThreadId = libc::pthread_t;
 
-/// A constant which is evaluated to `true` if the target OS is either
-/// Linux-based or Android.
-const IS_LINUX_ANDROID: bool = cfg!(any(target_os = "linux", target_os = "android"));
-/// A constant which is evaluated to `true` if the target OS is either
-/// macOS or iOS.
-const IS_MACOS_IOS: bool = cfg!(any(target_os = "macos", target_os = "ios"));
-
 /// The maximum value possible for niceness. Threads with this value
 /// of niceness have the highest priority possible
 pub const NICENESS_MAX: i8 = -20;
@@ -343,24 +336,26 @@ impl ThreadPriority {
 
         match policy {
             ThreadSchedulePolicy::Normal(normal) => {
-                if IS_LINUX_ANDROID {
-                    if normal == NormalThreadSchedulePolicy::Idle {
-                        // Only `0` can be returned for `Idle` threads on Linux/Android.
-                        Ok(0)
+                cfg_if::cfg_if! {
+                    if #[cfg(any(target_os = "linux", target_os = "android"))] {
+                        if normal == NormalThreadSchedulePolicy::Idle {
+                            // Only `0` can be returned for `Idle` threads on Linux/Android.
+                            Ok(0)
+                        } else {
+                            // Niceness can be used on Linux/Android.
+                            Ok(match edge {
+                                PriorityPolicyEdgeValueType::Minimum => NICENESS_MIN as libc::c_int,
+                                PriorityPolicyEdgeValueType::Maximum => NICENESS_MAX as libc::c_int,
+                            })
+                        }
+                    } else if #[cfg(any(target_os = "macos", target_os = "ios"))] {
+                        // macOS/iOS allows specifying the priority using sched params.
+                        get_edge_priority(policy)
                     } else {
-                        // Niceness can be used on Linux/Android.
-                        Ok(match edge {
-                            PriorityPolicyEdgeValueType::Minimum => NICENESS_MIN as libc::c_int,
-                            PriorityPolicyEdgeValueType::Maximum => NICENESS_MAX as libc::c_int,
-                        })
+                        Err(Error::Priority(
+                            "Unsupported thread priority for this OS. Change the scheduling policy or use a supported OS.",
+                        ))
                     }
-                } else if IS_MACOS_IOS {
-                    // macOS/iOS allows specifying the priority using sched params.
-                    get_edge_priority(policy)
-                } else {
-                    Err(Error::Priority(
-                        "Unsupported thread priority for this OS. Change the scheduling policy or use a supported OS.",
-                    ))
                 }
             }
             _ => get_edge_priority(policy),
