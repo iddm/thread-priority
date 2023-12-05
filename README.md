@@ -1,5 +1,5 @@
 # thread-priority
-[![CI](https://github.com/vityafx/thread-priority/actions/workflows/ci.yml/badge.svg)](https://github.com/vityafx/thread-priority/actions/workflows/ci.yml) [![Crates](https://img.shields.io/crates/v/thread-priority.svg)](https://crates.io/crates/thread-priority) [![Docs](https://docs.rs/thread-priority/badge.svg)](https://docs.rs/thread-priority) [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![CI](https://github.com/iddm/thread-priority/actions/workflows/ci.yml/badge.svg)](https://github.com/iddm/thread-priority/actions/workflows/ci.yml) [![Crates](https://img.shields.io/crates/v/thread-priority.svg)](https://crates.io/crates/thread-priority) [![Docs](https://docs.rs/thread-priority/badge.svg)](https://docs.rs/thread-priority) [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 
 A simple library to control thread schedule policies and thread priority.
@@ -123,4 +123,4 @@ println!("This thread's native id is: {:?}", std::thread::current().get_native_i
 ```
 
 ## License
-This project is [licensed under the MIT license](https://github.com/vityafx/thread-priority/blob/master/LICENSE).
+This project is [licensed under the MIT license](https://github.com/iddm/thread-priority/blob/master/LICENSE).
