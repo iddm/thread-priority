@@ -1,9 +1,9 @@
 [package]
 name = "thread-priority"
-version = "0.15.0"
+version = "0.15.1"
 authors = ["Victor Polevoy <fx@thefx.co>"]
 description = "Library for managing threads priority and schedule policies"
-repository = "https://github.com/vityafx/thread-priority"
+repository = "https://github.com/iddm/thread-priority"
 documentation = "https://docs.rs/thread-priority/"
 readme = "README.md"
 license = "MIT"
