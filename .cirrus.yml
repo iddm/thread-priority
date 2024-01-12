@@ -1,22 +1,9 @@
 task:
-  name: nightly x86_64-unknown-freebsd-12
-  freebsd_instance:
-    image: freebsd-12-2-release-amd64
-  setup_script:
-    - pkg install -y curl
-    - curl https://sh.rustup.rs -sSf --output rustup.sh
-    - sh rustup.sh --default-toolchain nightly -y --profile=minimal
-    - . $HOME/.cargo/env
-  test_script:
-    - . $HOME/.cargo/env
-    - cargo test --all-features
-
-task:
   name: nightly x86_64-unknown-freebsd-13
   freebsd_instance:
-    image: freebsd-13-0-release-amd64
+    image_family: freebsd-13-2
   setup_script:
-    - pkg install -y curl
+    - pkg install -y curl ssl
     - curl https://sh.rustup.rs -sSf --output rustup.sh
     - sh rustup.sh -y --default-toolchain nightly --profile=minimal
     - . $HOME/.cargo/env
@@ -27,9 +14,9 @@ task:
 task:
   name: nightly x86_64-unknown-freebsd-14
   freebsd_instance:
-    image: freebsd-14-0-current-amd64-v20220203
+    image_family: freebsd-14-0
   setup_script:
-    - pkg install -y curl
+    - pkg install -y curl ssl
     - curl https://sh.rustup.rs -sSf --output rustup.sh
     - sh rustup.sh -y --default-toolchain nightly --profile=minimal
     - . $HOME/.cargo/env
