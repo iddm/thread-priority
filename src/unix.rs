@@ -128,6 +128,7 @@ impl ScheduleParams {
 bitflags::bitflags! {
     /// Flags for controlling Deadline scheduling behavior.
     #[repr(transparent)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct DeadlineFlags: u64 {
         /// Children created by [`libc::fork`] will not inherit privileged
         /// scheduling policies.
@@ -138,13 +139,6 @@ bitflags::bitflags! {
         /// Allows a task to get informed about runtime overruns through the
         /// delivery of SIGXCPU signals.
         const DEADLINE_OVERRUN = 0x04;
-    }
-}
-
-#[cfg(any(target_os = "linux", target_os = "android"))]
-impl Default for DeadlineFlags {
-    fn default() -> Self {
-        Self::empty()
     }
 }
 
