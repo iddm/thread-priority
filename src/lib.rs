@@ -196,6 +196,21 @@ pub enum Error {
     Ffi(&'static str),
 }
 
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Priority(s) => write!(f, "unable to set priority: {}", s),
+            Error::PriorityNotInRange(range) => {
+                write!(f, "priority must be within the range: {:?}", range)
+            }
+            Error::OS(i) => write!(f, "the operating system returned error code {}", i),
+            Error::Ffi(s) => write!(f, "FFI error: {}", s),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
 /// Platform-independent thread priority value.
 /// Should be in `[0; 100)` range. The higher the number is - the higher
 /// the priority.
