@@ -1,6 +1,6 @@
 [package]
 name = "thread-priority"
-version = "0.15.1"
+version = "0.16.0"
 authors = ["Victor Polevoy <fx@thefx.co>"]
 description = "Library for managing threads priority and schedule policies"
 repository = "https://github.com/iddm/thread-priority"
@@ -12,7 +12,7 @@ categories = ["concurrency", "asynchronous", "os"]
 edition = "2021"
 
 [dev-dependencies]
-rstest = "0.13"
+rstest = "0.18"
 
 [dependencies]
 log = "0.4"
