@@ -1,6 +1,6 @@
 [package]
 name = "thread-priority"
-version = "0.16.0"
+version = "0.17.0"
 authors = ["Victor Polevoy <fx@thefx.co>"]
 description = "Library for managing threads priority and schedule policies"
 repository = "https://github.com/iddm/thread-priority"
@@ -10,9 +10,10 @@ license = "MIT"
 keywords = ["thread", "schedule", "priority", "pthread"]
 categories = ["concurrency", "asynchronous", "os"]
 edition = "2021"
+rust-version = "1.67.1"
 
 [dev-dependencies]
-rstest = "0.18"
+rstest = "0.19"
 
 [dependencies]
 log = "0.4"
