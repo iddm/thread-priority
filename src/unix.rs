@@ -596,19 +596,29 @@ pub fn set_thread_priority_and_policy(
                     e => Err(Error::OS(e)),
                 }
             } else {
-                // If this is a normal-scheduled thread, the priority is
-                // set via niceness.
+                // Normal priority threads must be set with static priority 0.
+                let params = ScheduleParams { sched_priority: 0 }.into_posix();
+
+                let ret = unsafe {
+                    libc::pthread_setschedparam(
+                        native,
+                        policy.to_posix(),
+                        &params as *const libc::sched_param,
+                    )
+                };
+
+                if ret != 0 {
+                    return Err(Error::OS(ret));
+                }
+
+                // Normal priority threads adjust relative priority through niceness.
                 set_errno(0);
-
                 let ret = unsafe { libc::setpriority(libc::PRIO_PROCESS, 0, fixed_priority) };
-                if ret == 0 {
-                    return Ok(());
+                if ret != 0 {
+                    return Err(Error::OS(errno()));
                 }
 
-                match errno() {
-                    0 => Ok(()),
-                    e => Err(Error::OS(e)),
-                }
+                Ok(())
             }
         }
     }
