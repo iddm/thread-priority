@@ -820,6 +820,44 @@ mod tests {
         assert!(thread_schedule_policy_param(thread_id).is_ok());
     }
 
+    // Running this test requires CAP_SYS_NICE.
+    #[test]
+    fn change_between_realtime_and_normal_policies_requires_capabilities() {
+        use crate::ThreadPriorityOsValue;
+
+        const TEST_PRIORITY: u8 = 15;
+
+        let realtime_policy = ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo);
+        let normal_policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other);
+
+        // While we may desire an OS-specific priority, the reported value is always crossplatform.
+        let desired_priority = ThreadPriority::Os(ThreadPriorityOsValue(TEST_PRIORITY as _));
+        let expected_priority = ThreadPriority::Crossplatform(ThreadPriorityValue(TEST_PRIORITY));
+
+        let thread = std::thread::current();
+        thread
+            .set_priority_and_policy(realtime_policy, desired_priority)
+            .expect("to set realtime fifo policy");
+
+        assert_eq!(thread.get_schedule_policy(), Ok(realtime_policy));
+        assert_eq!(thread.get_priority(), Ok(expected_priority));
+
+        thread
+            .set_priority_and_policy(normal_policy, desired_priority)
+            .expect("to set normal other policy");
+
+        assert_eq!(thread.get_schedule_policy(), Ok(normal_policy));
+
+        // On linux, normal priority threads always have static priority 0. Instead the "nice" value is used.
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(thread.get_priority(), Ok(expected_priority));
+        #[cfg(target_os = "linux")]
+        {
+            let nice = unsafe { libc::getpriority(0, 0) };
+            assert_eq!(nice, TEST_PRIORITY as i32);
+        }
+    }
+
     #[test]
     #[cfg(target_os = "linux")]
     fn set_deadline_policy() {
