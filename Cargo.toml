@@ -1,6 +1,6 @@
 [package]
 name = "thread-priority"
-version = "1.0.0"
+version = "1.2.0"
 authors = ["Victor Polevoy <fx@thefx.co>"]
 description = "Library for managing threads priority and schedule policies"
 repository = "https://github.com/iddm/thread-priority"
