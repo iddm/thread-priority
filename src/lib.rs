@@ -246,19 +246,23 @@ impl std::error::Error for Error {}
 pub struct ThreadPriorityValue(u8);
 impl ThreadPriorityValue {
     /// The maximum value for a thread priority.
-    pub const MAX: u8 = 99;
+    pub const MAX: u8 = if cfg!(target_os = "vxworks") { 255 } else { 99 };
     /// The minimum value for a thread priority.
     pub const MIN: u8 = 0;
 }
 
 impl std::convert::TryFrom<u8> for ThreadPriorityValue {
-    type Error = &'static str;
+    type Error = String;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         if (Self::MIN..=Self::MAX).contains(&value) {
             Ok(Self(value))
         } else {
-            Err("The value is not in the range of [0;99]")
+            Err(format!(
+                "The value is not in the range of [{}; {}]",
+                Self::MIN,
+                Self::MAX
+            ))
         }
     }
 }
@@ -810,7 +814,7 @@ pub trait ThreadScopeExt<'scope> {
 }
 
 #[rustversion::since(1.63)]
-impl<'scope, 'env> ThreadScopeExt<'scope> for std::thread::Scope<'scope, 'env> {
+impl<'scope> ThreadScopeExt<'scope> for std::thread::Scope<'scope, '_> {
     fn spawn_with_priority<F, T>(
         &'scope self,
         priority: ThreadPriority,
