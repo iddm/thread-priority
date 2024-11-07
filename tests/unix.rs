@@ -46,6 +46,7 @@ fn get_and_set_priority_with_normal_policies(
 #[cfg(any(
     target_os = "macos",
     target_os = "openbsd",
+    target_os = "vxworks",
     target_os = "freebsd",
     target_os = "netbsd"
 ))]
@@ -64,9 +65,20 @@ fn get_and_set_priority_with_normal_policies(
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Idle), 0..=0)]
 #[cfg(target_os = "linux")]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Batch), -20..=19)]
+#[cfg(not(target_os = "vxworks"))]
 #[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other), -20..=19)]
+#[cfg(not(target_os = "vxworks"))]
 #[case(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo), 0..=99)]
+#[cfg(not(target_os = "vxworks"))]
 #[case(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin), 0..=99)]
+#[cfg(target_os = "vxworks")]
+#[case(ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other), 0.=255)]
+#[cfg(target_os = "vxworks")]
+#[case(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo), 0..=255)]
+#[cfg(target_os = "vxworks")]
+#[case(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin), 0..=255)]
+#[cfg(target_os = "vxworks")]
+#[case(ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Sporadic), 0..=255)]
 fn check_min_and_max_priority_values(
     #[case] policy: ThreadSchedulePolicy,
     #[case] posix_range: std::ops::RangeInclusive<i32>,
@@ -107,6 +119,7 @@ fn set_priority_with_normal_policy_but_with_invalid_value(#[case] policy: Thread
 #[cfg(any(
     target_os = "macos",
     target_os = "openbsd",
+    target_os = "vxworks",
     target_os = "freebsd",
     target_os = "netbsd"
 ))]
