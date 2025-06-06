@@ -201,12 +201,12 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Priority(s) => write!(f, "unable to set priority: {}", s),
+            Error::Priority(s) => write!(f, "unable to set priority: {s}"),
             Error::PriorityNotInRange(range) => {
-                write!(f, "priority must be within the range: {:?}", range)
+                write!(f, "priority must be within the range: {range:?}")
             }
-            Error::OS(i) => write!(f, "the operating system returned error code {}", i),
-            Error::Ffi(s) => write!(f, "FFI error: {}", s),
+            Error::OS(i) => write!(f, "the operating system returned error code {i}"),
+            Error::Ffi(s) => write!(f, "FFI error: {s}"),
         }
     }
 }
