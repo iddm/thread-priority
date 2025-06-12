@@ -37,7 +37,7 @@ impl PartialOrd for ThreadId {
 
 impl Ord for ThreadId {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self.0 .0 as usize).cmp(&(other.0 .0 as usize))
+        (self.0.0 as usize).cmp(&(other.0.0 as usize))
     }
 }
 
@@ -123,7 +123,7 @@ impl std::convert::TryFrom<ThreadPriority> for WinAPIThreadPriority {
                     _ => {
                         return Err(Error::Priority(
                             "The value is out of range of allowed values.",
-                        ))
+                        ));
                     }
                 }
             }
@@ -454,7 +454,9 @@ impl ThreadExt for std::thread::Thread {
         if self.id() == std::thread::current().id() {
             Ok(thread_native_id())
         } else {
-            Err(Error::Priority("The `ThreadExt::get_native_id()` is currently limited to be called on the current thread."))
+            Err(Error::Priority(
+                "The `ThreadExt::get_native_id()` is currently limited to be called on the current thread.",
+            ))
         }
     }
 }

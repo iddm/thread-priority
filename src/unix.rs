@@ -530,7 +530,7 @@ fn set_thread_priority_and_policy_deadline(
         _ => {
             return Err(Error::Priority(
                 "Deadline policy given without deadline priority.",
-            ))
+            ));
         }
     };
     let tid = native as libc::pid_t;
@@ -821,7 +821,9 @@ impl ThreadExt for std::thread::Thread {
         if self.id() == std::thread::current().id() {
             Ok(thread_native_id())
         } else {
-            Err(Error::Priority("The `ThreadExt::get_native_id()` is currently limited to be called on the current thread."))
+            Err(Error::Priority(
+                "The `ThreadExt::get_native_id()` is currently limited to be called on the current thread.",
+            ))
         }
     }
 }
@@ -909,17 +911,19 @@ mod tests {
         #![allow(clippy::identity_op)]
         use std::time::Duration;
 
-        assert!(set_thread_priority_and_policy(
-            0, // current thread
-            ThreadPriority::Deadline {
-                runtime: Duration::from_millis(1),
-                deadline: Duration::from_millis(10),
-                period: Duration::from_millis(100),
-                flags: DeadlineFlags::RESET_ON_FORK,
-            },
-            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline)
-        )
-        .is_ok());
+        assert!(
+            set_thread_priority_and_policy(
+                0, // current thread
+                ThreadPriority::Deadline {
+                    runtime: Duration::from_millis(1),
+                    deadline: Duration::from_millis(10),
+                    period: Duration::from_millis(100),
+                    flags: DeadlineFlags::RESET_ON_FORK,
+                },
+                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline)
+            )
+            .is_ok()
+        );
 
         let attributes = get_thread_scheduling_attributes().unwrap();
         assert_eq!(
