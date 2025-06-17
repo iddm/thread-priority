@@ -4,28 +4,53 @@
 //! the windows threads, and this module provides
 //! better control over those.
 
-use winapi::ctypes::c_int;
-use winapi::shared::minwindef::DWORD;
-use winapi::um::errhandlingapi::GetLastError;
-use winapi::um::processthreadsapi::{
-    GetCurrentThread, GetThreadPriority, SetThreadIdealProcessor, SetThreadPriority,
-    SetThreadPriorityBoost,
+use windows::Win32::{
+    Foundation::{GetLastError, HANDLE},
+    System::{
+        Threading::{
+            GetCurrentThread, GetThreadPriority, SetThreadIdealProcessor, SetThreadPriority,
+            SetThreadPriorityBoost, THREAD_MODE_BACKGROUND_BEGIN, THREAD_MODE_BACKGROUND_END,
+            THREAD_PRIORITY, THREAD_PRIORITY_ABOVE_NORMAL, THREAD_PRIORITY_BELOW_NORMAL,
+            THREAD_PRIORITY_HIGHEST, THREAD_PRIORITY_IDLE, THREAD_PRIORITY_LOWEST,
+            THREAD_PRIORITY_NORMAL, THREAD_PRIORITY_TIME_CRITICAL,
+        },
+        WindowsProgramming::THREAD_PRIORITY_ERROR_RETURN,
+    },
 };
-use winapi::um::winbase;
-use winapi::um::winnt::HANDLE;
 
 use crate::{Error, ThreadPriority};
 
 /// An alias type for specifying the ideal processor.
 /// Used in the WinAPI for affinity control.
-pub type IdealProcessor = DWORD;
+pub type IdealProcessor = u32;
 
 /// An alias type for a thread id.
-pub type ThreadId = HANDLE;
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct ThreadId(HANDLE);
+
+impl PartialOrd for ThreadId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ThreadId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.0.0 as usize).cmp(&(other.0.0 as usize))
+    }
+}
+
+impl ThreadId {
+    /// Returns true if the thread id is invalid.
+    pub fn is_invalid(&self) -> bool {
+        self.0.is_invalid()
+    }
+}
 
 /// The WinAPI priority representation. Check out MSDN for more info:
 /// <https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setthreadpriority>
-#[repr(u32)]
+#[repr(i32)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum WinAPIThreadPriority {
     /// Begin background processing mode. The system lowers the resource
@@ -37,7 +62,7 @@ pub enum WinAPIThreadPriority {
     ///
     /// # Warning
     /// Windows Server 2003: This value is not supported.
-    BackgroundModeBegin = winbase::THREAD_MODE_BACKGROUND_BEGIN,
+    BackgroundModeBegin = THREAD_MODE_BACKGROUND_BEGIN.0,
     /// End background processing mode. The system restores the resource
     /// scheduling priorities of the thread as they were before the thread
     /// entered background processing mode.
@@ -47,25 +72,25 @@ pub enum WinAPIThreadPriority {
     ///
     /// # Warning
     /// Windows Server 2003: This value is not supported.
-    BackgroundModeEnd = winbase::THREAD_MODE_BACKGROUND_END,
+    BackgroundModeEnd = THREAD_MODE_BACKGROUND_END.0,
     /// Priority 1 point above the priority class.
-    AboveNormal = winbase::THREAD_PRIORITY_ABOVE_NORMAL,
+    AboveNormal = THREAD_PRIORITY_ABOVE_NORMAL.0,
     /// Priority 1 point below the priority class.
-    BelowNormal = winbase::THREAD_PRIORITY_BELOW_NORMAL,
+    BelowNormal = THREAD_PRIORITY_BELOW_NORMAL.0,
     /// Priority 2 points above the priority class.
-    Highest = winbase::THREAD_PRIORITY_HIGHEST,
+    Highest = THREAD_PRIORITY_HIGHEST.0,
     /// Base priority of 1 for IDLE_PRIORITY_CLASS, BELOW_NORMAL_PRIORITY_CLASS,
     /// NORMAL_PRIORITY_CLASS, ABOVE_NORMAL_PRIORITY_CLASS, or HIGH_PRIORITY_CLASS
     /// processes, and a base priority of 16 for REALTIME_PRIORITY_CLASS processes.
-    Idle = winbase::THREAD_PRIORITY_IDLE,
+    Idle = THREAD_PRIORITY_IDLE.0,
     /// Priority 2 points below the priority class.
-    Lowest = winbase::THREAD_PRIORITY_LOWEST,
+    Lowest = THREAD_PRIORITY_LOWEST.0,
     /// Normal priority for the priority class.
-    Normal = winbase::THREAD_PRIORITY_NORMAL,
+    Normal = THREAD_PRIORITY_NORMAL.0,
     /// Base priority of 15 for IDLE_PRIORITY_CLASS, BELOW_NORMAL_PRIORITY_CLASS,
     /// NORMAL_PRIORITY_CLASS, ABOVE_NORMAL_PRIORITY_CLASS, or HIGH_PRIORITY_CLASS
     /// processes, and a base priority of 31 for REALTIME_PRIORITY_CLASS processes.
-    TimeCritical = winbase::THREAD_PRIORITY_TIME_CRITICAL,
+    TimeCritical = THREAD_PRIORITY_TIME_CRITICAL.0,
 }
 
 impl std::convert::TryFrom<ThreadPriority> for WinAPIThreadPriority {
@@ -84,41 +109,43 @@ impl std::convert::TryFrom<ThreadPriority> for WinAPIThreadPriority {
                 99 => WinAPIThreadPriority::TimeCritical,
                 _ => return Err(Error::Priority("The value is out of range [0; 99].")),
             },
-            ThreadPriority::Os(crate::ThreadPriorityOsValue(p)) => match p {
-                winbase::THREAD_MODE_BACKGROUND_BEGIN => WinAPIThreadPriority::BackgroundModeBegin,
-                winbase::THREAD_MODE_BACKGROUND_END => WinAPIThreadPriority::BackgroundModeEnd,
-                winbase::THREAD_PRIORITY_ABOVE_NORMAL => WinAPIThreadPriority::AboveNormal,
-                winbase::THREAD_PRIORITY_BELOW_NORMAL => WinAPIThreadPriority::BelowNormal,
-                winbase::THREAD_PRIORITY_HIGHEST => WinAPIThreadPriority::Highest,
-                winbase::THREAD_PRIORITY_IDLE => WinAPIThreadPriority::Idle,
-                winbase::THREAD_PRIORITY_LOWEST => WinAPIThreadPriority::Lowest,
-                winbase::THREAD_PRIORITY_NORMAL => WinAPIThreadPriority::Normal,
-                winbase::THREAD_PRIORITY_TIME_CRITICAL => WinAPIThreadPriority::TimeCritical,
-                _ => {
-                    return Err(Error::Priority(
-                        "The value is out of range of allowed values.",
-                    ))
+            ThreadPriority::Os(crate::ThreadPriorityOsValue(p)) => {
+                match THREAD_PRIORITY(p as i32) {
+                    THREAD_MODE_BACKGROUND_BEGIN => WinAPIThreadPriority::BackgroundModeBegin,
+                    THREAD_MODE_BACKGROUND_END => WinAPIThreadPriority::BackgroundModeEnd,
+                    THREAD_PRIORITY_ABOVE_NORMAL => WinAPIThreadPriority::AboveNormal,
+                    THREAD_PRIORITY_BELOW_NORMAL => WinAPIThreadPriority::BelowNormal,
+                    THREAD_PRIORITY_HIGHEST => WinAPIThreadPriority::Highest,
+                    THREAD_PRIORITY_IDLE => WinAPIThreadPriority::Idle,
+                    THREAD_PRIORITY_LOWEST => WinAPIThreadPriority::Lowest,
+                    THREAD_PRIORITY_NORMAL => WinAPIThreadPriority::Normal,
+                    THREAD_PRIORITY_TIME_CRITICAL => WinAPIThreadPriority::TimeCritical,
+                    _ => {
+                        return Err(Error::Priority(
+                            "The value is out of range of allowed values.",
+                        ));
+                    }
                 }
-            },
+            }
             ThreadPriority::Max => WinAPIThreadPriority::Highest,
         })
     }
 }
 
-impl std::convert::TryFrom<DWORD> for WinAPIThreadPriority {
+impl std::convert::TryFrom<THREAD_PRIORITY> for WinAPIThreadPriority {
     type Error = crate::Error;
 
-    fn try_from(priority: DWORD) -> Result<Self, Self::Error> {
+    fn try_from(priority: THREAD_PRIORITY) -> Result<Self, Self::Error> {
         Ok(match priority {
-            winbase::THREAD_MODE_BACKGROUND_BEGIN => WinAPIThreadPriority::BackgroundModeBegin,
-            winbase::THREAD_MODE_BACKGROUND_END => WinAPIThreadPriority::BackgroundModeEnd,
-            winbase::THREAD_PRIORITY_ABOVE_NORMAL => WinAPIThreadPriority::AboveNormal,
-            winbase::THREAD_PRIORITY_BELOW_NORMAL => WinAPIThreadPriority::BelowNormal,
-            winbase::THREAD_PRIORITY_HIGHEST => WinAPIThreadPriority::Highest,
-            winbase::THREAD_PRIORITY_IDLE => WinAPIThreadPriority::Idle,
-            winbase::THREAD_PRIORITY_LOWEST => WinAPIThreadPriority::Lowest,
-            winbase::THREAD_PRIORITY_NORMAL => WinAPIThreadPriority::Normal,
-            winbase::THREAD_PRIORITY_TIME_CRITICAL => WinAPIThreadPriority::TimeCritical,
+            THREAD_MODE_BACKGROUND_BEGIN => WinAPIThreadPriority::BackgroundModeBegin,
+            THREAD_MODE_BACKGROUND_END => WinAPIThreadPriority::BackgroundModeEnd,
+            THREAD_PRIORITY_ABOVE_NORMAL => WinAPIThreadPriority::AboveNormal,
+            THREAD_PRIORITY_BELOW_NORMAL => WinAPIThreadPriority::BelowNormal,
+            THREAD_PRIORITY_HIGHEST => WinAPIThreadPriority::Highest,
+            THREAD_PRIORITY_IDLE => WinAPIThreadPriority::Idle,
+            THREAD_PRIORITY_LOWEST => WinAPIThreadPriority::Lowest,
+            THREAD_PRIORITY_NORMAL => WinAPIThreadPriority::Normal,
+            THREAD_PRIORITY_TIME_CRITICAL => WinAPIThreadPriority::TimeCritical,
             _ => return Err(Error::Priority("Priority couldn't be parsed")),
         })
     }
@@ -173,11 +200,8 @@ pub fn set_winapi_thread_priority(
     priority: WinAPIThreadPriority,
 ) -> Result<(), Error> {
     unsafe {
-        if SetThreadPriority(native, priority as c_int) != 0 {
-            Ok(())
-        } else {
-            Err(Error::OS(GetLastError() as i32))
-        }
+        SetThreadPriority(native.0, THREAD_PRIORITY(priority as i32))
+            .map_err(|e| Error::OS(e.code().0))
     }
 }
 
@@ -198,7 +222,6 @@ pub fn set_winapi_thread_priority(
 ///
 /// If there's an error, a result of
 /// [`GetLastError`](https://docs.microsoft.com/en-us/windows/win32/api/errhandlingapi/nf-errhandlingapi-getlasterror) is returned.
-
 pub fn set_current_thread_priority(priority: ThreadPriority) -> Result<(), Error> {
     let thread_id = thread_native_id();
     set_thread_priority(thread_id, priority)
@@ -217,13 +240,13 @@ pub fn set_current_thread_priority(priority: ThreadPriority) -> Result<(), Error
 /// ```
 pub fn get_thread_priority(native: ThreadId) -> Result<ThreadPriority, Error> {
     unsafe {
-        let ret = GetThreadPriority(native);
-        if ret as u32 != winbase::THREAD_PRIORITY_ERROR_RETURN {
-            Ok(ThreadPriority::Os(crate::ThreadPriorityOsValue(
-                WinAPIThreadPriority::try_from(ret as DWORD)? as u32,
+        let ret = GetThreadPriority(native.0);
+        if ret as u32 != THREAD_PRIORITY_ERROR_RETURN {
+            Ok(ThreadPriority::Os(crate::ThreadPriorityOsValue::from(
+                WinAPIThreadPriority::try_from(THREAD_PRIORITY(ret))?,
             )))
         } else {
-            Err(Error::OS(GetLastError() as i32))
+            Err(Error::OS(GetLastError().0 as i32))
         }
     }
 }
@@ -241,13 +264,13 @@ pub fn get_thread_priority(native: ThreadId) -> Result<ThreadPriority, Error> {
 /// ```
 pub fn get_current_thread_priority() -> Result<ThreadPriority, Error> {
     unsafe {
-        let ret = GetThreadPriority(thread_native_id());
-        if ret as u32 != winbase::THREAD_PRIORITY_ERROR_RETURN {
-            Ok(ThreadPriority::Os(crate::ThreadPriorityOsValue(
-                WinAPIThreadPriority::try_from(ret as DWORD)? as u32,
+        let ret = GetThreadPriority(thread_native_id().0);
+        if ret as u32 != THREAD_PRIORITY_ERROR_RETURN {
+            Ok(ThreadPriority::Os(crate::ThreadPriorityOsValue::from(
+                WinAPIThreadPriority::try_from(THREAD_PRIORITY(ret))?,
             )))
         } else {
-            Err(Error::OS(GetLastError() as i32))
+            Err(Error::OS(GetLastError().0 as i32))
         }
     }
 }
@@ -261,10 +284,10 @@ pub fn get_current_thread_priority() -> Result<ThreadPriority, Error> {
 /// ```rust
 /// use thread_priority::thread_native_id;
 ///
-/// assert!(!thread_native_id().is_null());
+/// assert!(!thread_native_id().is_invalid());
 /// ```
 pub fn thread_native_id() -> ThreadId {
-    unsafe { GetCurrentThread() }
+    ThreadId(unsafe { GetCurrentThread() })
 }
 
 /// Disables or enables the ability of the system to temporarily boost the priority of a thread.
@@ -281,13 +304,7 @@ pub fn thread_native_id() -> ThreadId {
 /// assert!(set_thread_priority_boost(thread_id, false).is_ok())
 /// ```
 pub fn set_thread_priority_boost(native: ThreadId, enabled: bool) -> Result<(), Error> {
-    unsafe {
-        if SetThreadPriorityBoost(native, enabled as i32) != 0 {
-            Ok(())
-        } else {
-            Err(Error::OS(GetLastError() as i32))
-        }
-    }
+    unsafe { SetThreadPriorityBoost(native.0, enabled).map_err(|e| Error::OS(e.code().0)) }
 }
 
 /// Disables or enables the ability of the system to temporarily boost the priority of a current thread.
@@ -327,9 +344,9 @@ pub fn set_thread_ideal_processor(
     ideal_processor: IdealProcessor,
 ) -> Result<IdealProcessor, Error> {
     unsafe {
-        let ret = SetThreadIdealProcessor(native, ideal_processor);
-        if ret == IdealProcessor::max_value() - 1 {
-            Err(Error::OS(GetLastError() as i32))
+        let ret = SetThreadIdealProcessor(native.0, ideal_processor);
+        if ret == u32::MAX {
+            Err(Error::OS(GetLastError().0 as i32))
         } else {
             Ok(ret)
         }
@@ -350,18 +367,20 @@ impl std::convert::TryFrom<u32> for crate::ThreadPriorityOsValue {
     type Error = ();
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        Ok(crate::ThreadPriorityOsValue(match value {
-            winbase::THREAD_MODE_BACKGROUND_BEGIN
-            | winbase::THREAD_MODE_BACKGROUND_END
-            | winbase::THREAD_PRIORITY_ABOVE_NORMAL
-            | winbase::THREAD_PRIORITY_BELOW_NORMAL
-            | winbase::THREAD_PRIORITY_HIGHEST
-            | winbase::THREAD_PRIORITY_IDLE
-            | winbase::THREAD_PRIORITY_LOWEST
-            | winbase::THREAD_PRIORITY_NORMAL
-            | winbase::THREAD_PRIORITY_TIME_CRITICAL => value,
-            _ => return Err(()),
-        }))
+        Ok(crate::ThreadPriorityOsValue(
+            match THREAD_PRIORITY(value as i32) {
+                THREAD_MODE_BACKGROUND_BEGIN
+                | THREAD_MODE_BACKGROUND_END
+                | THREAD_PRIORITY_ABOVE_NORMAL
+                | THREAD_PRIORITY_BELOW_NORMAL
+                | THREAD_PRIORITY_HIGHEST
+                | THREAD_PRIORITY_IDLE
+                | THREAD_PRIORITY_LOWEST
+                | THREAD_PRIORITY_NORMAL
+                | THREAD_PRIORITY_TIME_CRITICAL => value,
+                _ => return Err(()),
+            },
+        ))
     }
 }
 
@@ -397,7 +416,7 @@ pub trait ThreadExt {
     /// ```rust
     /// use thread_priority::*;
     ///
-    /// assert!(!std::thread::current().get_native_id().unwrap().is_null());
+    /// assert!(!std::thread::current().get_native_id().unwrap().is_invalid());
     /// ```
     fn get_native_id(&self) -> Result<ThreadId, Error>;
 
@@ -435,7 +454,9 @@ impl ThreadExt for std::thread::Thread {
         if self.id() == std::thread::current().id() {
             Ok(thread_native_id())
         } else {
-            Err(Error::Priority("The `ThreadExt::get_native_id()` is currently limited to be called on the current thread."))
+            Err(Error::Priority(
+                "The `ThreadExt::get_native_id()` is currently limited to be called on the current thread.",
+            ))
         }
     }
 }

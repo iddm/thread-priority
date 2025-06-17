@@ -1,6 +1,6 @@
 [package]
 name = "thread-priority"
-version = "0.16.0"
+version = "2.0.0"
 authors = ["Victor Polevoy <fx@thefx.co>"]
 description = "Library for managing threads priority and schedule policies"
 repository = "https://github.com/iddm/thread-priority"
@@ -9,10 +9,11 @@ readme = "README.md"
 license = "MIT"
 keywords = ["thread", "schedule", "priority", "pthread"]
 categories = ["concurrency", "asynchronous", "os"]
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 
 [dev-dependencies]
-rstest = "0.18"
+rstest = "0.25"
 
 [dependencies]
 log = "0.4"
@@ -23,6 +24,9 @@ bitflags = "2"
 [target.'cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "ios", target_os = "dragonfly", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))'.dependencies]
 libc = ">=0.2.123"
 
+[target.'cfg(target_os = "vxworks")'.dependencies]
+libc = ">=0.2.161"
+
 [target.'cfg(windows)'.dependencies]
 libc = ">=0.2.123"
-winapi = { version = "0.3", features = ["errhandlingapi", "processthreadsapi", "winnt", "minwindef", "winbase"] }
+windows = { version = "0.61", features = ["Win32", "Win32_System", "Win32_System_Threading", "Win32_System_WindowsProgramming"]  }

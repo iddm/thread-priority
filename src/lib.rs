@@ -152,6 +152,7 @@
     target_os = "dragonfly",
     target_os = "freebsd",
     target_os = "openbsd",
+    target_os = "vxworks",
     target_os = "netbsd",
     target_os = "android",
     target_arch = "wasm32",
@@ -167,6 +168,7 @@ use std::time::Duration;
     target_os = "dragonfly",
     target_os = "freebsd",
     target_os = "openbsd",
+    target_os = "vxworks",
     target_os = "netbsd",
     target_os = "android",
     target_arch = "wasm32",
@@ -199,12 +201,12 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Priority(s) => write!(f, "unable to set priority: {}", s),
+            Error::Priority(s) => write!(f, "unable to set priority: {s}"),
             Error::PriorityNotInRange(range) => {
-                write!(f, "priority must be within the range: {:?}", range)
+                write!(f, "priority must be within the range: {range:?}")
             }
-            Error::OS(i) => write!(f, "the operating system returned error code {}", i),
-            Error::Ffi(s) => write!(f, "FFI error: {}", s),
+            Error::OS(i) => write!(f, "the operating system returned error code {i}"),
+            Error::Ffi(s) => write!(f, "FFI error: {s}"),
         }
     }
 }
@@ -244,19 +246,23 @@ impl std::error::Error for Error {}
 pub struct ThreadPriorityValue(u8);
 impl ThreadPriorityValue {
     /// The maximum value for a thread priority.
-    pub const MAX: u8 = 99;
+    pub const MAX: u8 = if cfg!(target_os = "vxworks") { 255 } else { 99 };
     /// The minimum value for a thread priority.
     pub const MIN: u8 = 0;
 }
 
 impl std::convert::TryFrom<u8> for ThreadPriorityValue {
-    type Error = &'static str;
+    type Error = String;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         if (Self::MIN..=Self::MAX).contains(&value) {
             Ok(Self(value))
         } else {
-            Err("The value is not in the range of [0;99]")
+            Err(format!(
+                "The value is not in the range of [{}; {}]",
+                Self::MIN,
+                Self::MAX
+            ))
         }
     }
 }
@@ -808,7 +814,7 @@ pub trait ThreadScopeExt<'scope> {
 }
 
 #[rustversion::since(1.63)]
-impl<'scope, 'env> ThreadScopeExt<'scope> for std::thread::Scope<'scope, 'env> {
+impl<'scope> ThreadScopeExt<'scope> for std::thread::Scope<'scope, '_> {
     fn spawn_with_priority<F, T>(
         &'scope self,
         priority: ThreadPriority,

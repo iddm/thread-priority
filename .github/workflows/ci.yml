@@ -3,7 +3,7 @@ name: CI
 on: [push, pull_request]
 
 env:
-  minrust: 1.56.0
+  minrust: 1.85
 
 jobs:
   test:
@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install toolchain
         id: tc
@@ -44,7 +44,7 @@ jobs:
 
       - name: Setup cache
         if: runner.os != 'macOS'
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -79,7 +79,7 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install toolchain
         id: tc
@@ -90,7 +90,7 @@ jobs:
           override: true
 
       - name: Setup cache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -105,7 +105,7 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install toolchain (${{ env.minrust }})
         id: tc
@@ -116,7 +116,7 @@ jobs:
           override: true
 
       - name: Setup cache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -132,7 +132,7 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install toolchain
         id: tc
@@ -143,7 +143,7 @@ jobs:
           override: true
 
       - name: Setup cache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry

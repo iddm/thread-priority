@@ -10,6 +10,8 @@ use std::convert::TryFrom;
 use libc::SCHED_NORMAL as SCHED_OTHER;
 #[cfg(not(target_os = "android"))]
 use libc::SCHED_OTHER;
+#[cfg(target_os = "vxworks")]
+use libc::SCHED_SPORADIC;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use libc::{SCHED_BATCH, SCHED_IDLE};
 use libc::{SCHED_FIFO, SCHED_RR};
@@ -51,6 +53,8 @@ fn errno() -> libc::c_int {
                 *libc::__errno_location()
             } else if #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))] {
                 *libc::__error()
+            } else if #[cfg(target_os = "vxworks")] {
+                libc::errnoGet()
             } else {
                 compile_error!("Your OS is probably not supported.")
             }
@@ -67,6 +71,8 @@ fn set_errno(number: libc::c_int) {
                 *libc::__errno_location() = number;
             } else if #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))] {
                 *libc::__error() = number;
+            } else if #[cfg(target_os = "vxworks")] {
+                let _ = libc::errnoSet(number);
             } else {
                 compile_error!("Your OS is probably not supported.")
             }
@@ -171,6 +177,10 @@ pub enum RealtimeThreadSchedulePolicy {
     Fifo,
     /// A round-robin policy
     RoundRobin,
+    // Policy similar to Fifo
+    /// A sporadic scheduling policy specific to VxWorks.
+    #[cfg(target_os = "vxworks")]
+    Sporadic,
     /// A deadline policy. Note, due to Linux expecting a pid_t and not a pthread_t, the given
     /// [ThreadId](struct.ThreadId) will be interpreted as a pid_t. This policy is NOT
     /// POSIX-compatible, so we only include it for linux targets.
@@ -186,6 +196,8 @@ impl RealtimeThreadSchedulePolicy {
         match self {
             RealtimeThreadSchedulePolicy::Fifo => SCHED_FIFO,
             RealtimeThreadSchedulePolicy::RoundRobin => SCHED_RR,
+            #[cfg(target_os = "vxworks")]
+            RealtimeThreadSchedulePolicy::Sporadic => SCHED_SPORADIC,
             #[cfg(all(
                 any(target_os = "linux", target_os = "android"),
                 not(target_arch = "wasm32")
@@ -284,6 +296,10 @@ impl ThreadSchedulePolicy {
             SCHED_RR => Ok(ThreadSchedulePolicy::Realtime(
                 RealtimeThreadSchedulePolicy::RoundRobin,
             )),
+            #[cfg(target_os = "vxworks")]
+            SCHED_SPORADIC => Ok(ThreadSchedulePolicy::Realtime(
+                RealtimeThreadSchedulePolicy::Sporadic,
+            )),
             #[cfg(all(
                 any(target_os = "linux", target_os = "android"),
                 not(target_arch = "wasm32")
@@ -346,8 +362,8 @@ impl ThreadPriority {
                                 PriorityPolicyEdgeValueType::Maximum => NICENESS_MAX as libc::c_int,
                             })
                         }
-                    } else if #[cfg(any(target_os = "macos", target_os = "ios"))] {
-                        // macOS/iOS allows specifying the priority using sched params.
+                    } else if #[cfg(any(target_os = "macos", target_os = "ios", target_os = "vxworks"))] {
+                        // macOS/iOS and VxWorks allow specifying the priority using sched params.
                         get_edge_priority(policy)
                     } else {
                         Err(Error::Priority(
@@ -426,14 +442,14 @@ impl ThreadPriority {
                 // for the SCHED_OTHER policy.
                 // <https://www.usenix.org/legacy/publications/library/proceedings/bsdcon02/full_papers/gerbarg/gerbarg_html/index.html>
                 #[cfg(all(
-                    any(target_os = "macos", target_os = "ios"),
+                    any(target_os = "macos", target_os = "ios", target_os = "vxworks"),
                     not(target_arch = "wasm32")
                 ))]
                 ThreadSchedulePolicy::Normal(_) => {
                     Self::to_allowed_value_for_policy(p as i32, policy).map(|v| v as u32)
                 }
                 #[cfg(not(all(
-                    any(target_os = "macos", target_os = "ios"),
+                    any(target_os = "macos", target_os = "ios", target_os = "vxworks"),
                     not(target_arch = "wasm32")
                 )))]
                 ThreadSchedulePolicy::Normal(_) => {
@@ -514,7 +530,7 @@ fn set_thread_priority_and_policy_deadline(
         _ => {
             return Err(Error::Priority(
                 "Deadline policy given without deadline priority.",
-            ))
+            ));
         }
     };
     let tid = native as libc::pid_t;
@@ -571,10 +587,14 @@ pub fn set_thread_priority_and_policy(
         }
         _ => {
             let fixed_priority = priority.to_posix(policy)?;
-            // On macOS and iOS it is possible to set the priority
+            // On VxWorks, macOS and iOS it is possible to set the priority
             // this way.
             if matches!(policy, ThreadSchedulePolicy::Realtime(_))
-                || cfg!(any(target_os = "macos", target_os = "ios"))
+                || cfg!(any(
+                    target_os = "macos",
+                    target_os = "ios",
+                    target_os = "vxworks"
+                ))
             {
                 // If the policy is a realtime one, the priority is set via
                 // pthread_setschedparam.
@@ -596,19 +616,43 @@ pub fn set_thread_priority_and_policy(
                     e => Err(Error::OS(e)),
                 }
             } else {
-                // If this is a normal-scheduled thread, the priority is
-                // set via niceness.
+                //VxWorks does not have set priority function
+                #[cfg(target_os = "vxworks")]
+                unsafe fn setpriority(
+                    _which: u32,
+                    _who: u32,
+                    _priority: libc::c_int,
+                ) -> libc::c_int {
+                    set_errno(libc::ENOSYS);
+                    -1
+                }
+
+                #[cfg(not(target_os = "vxworks"))]
+                use libc::setpriority;
+
+                // Normal priority threads must be set with static priority 0.
+                let params = ScheduleParams { sched_priority: 0 }.into_posix();
+
+                let ret = unsafe {
+                    libc::pthread_setschedparam(
+                        native,
+                        policy.to_posix(),
+                        &params as *const libc::sched_param,
+                    )
+                };
+
+                if ret != 0 {
+                    return Err(Error::OS(ret));
+                }
+
+                // Normal priority threads adjust relative priority through niceness.
                 set_errno(0);
-
-                let ret = unsafe { libc::setpriority(libc::PRIO_PROCESS, 0, fixed_priority) };
-                if ret == 0 {
-                    return Ok(());
+                let ret = unsafe { setpriority(libc::PRIO_PROCESS, 0, fixed_priority) };
+                if ret != 0 {
+                    return Err(Error::OS(errno()));
                 }
 
-                match errno() {
-                    0 => Ok(()),
-                    e => Err(Error::OS(e)),
-                }
+                Ok(())
             }
         }
     }
@@ -777,7 +821,9 @@ impl ThreadExt for std::thread::Thread {
         if self.id() == std::thread::current().id() {
             Ok(thread_native_id())
         } else {
-            Err(Error::Priority("The `ThreadExt::get_native_id()` is currently limited to be called on the current thread."))
+            Err(Error::Priority(
+                "The `ThreadExt::get_native_id()` is currently limited to be called on the current thread.",
+            ))
         }
     }
 }
@@ -820,6 +866,44 @@ mod tests {
         assert!(thread_schedule_policy_param(thread_id).is_ok());
     }
 
+    // Running this test requires CAP_SYS_NICE.
+    #[test]
+    fn change_between_realtime_and_normal_policies_requires_capabilities() {
+        use crate::ThreadPriorityOsValue;
+
+        const TEST_PRIORITY: u8 = 15;
+
+        let realtime_policy = ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo);
+        let normal_policy = ThreadSchedulePolicy::Normal(NormalThreadSchedulePolicy::Other);
+
+        // While we may desire an OS-specific priority, the reported value is always crossplatform.
+        let desired_priority = ThreadPriority::Os(ThreadPriorityOsValue(TEST_PRIORITY as _));
+        let expected_priority = ThreadPriority::Crossplatform(ThreadPriorityValue(TEST_PRIORITY));
+
+        let thread = std::thread::current();
+        thread
+            .set_priority_and_policy(realtime_policy, desired_priority)
+            .expect("to set realtime fifo policy");
+
+        assert_eq!(thread.get_schedule_policy(), Ok(realtime_policy));
+        assert_eq!(thread.get_priority(), Ok(expected_priority));
+
+        thread
+            .set_priority_and_policy(normal_policy, desired_priority)
+            .expect("to set normal other policy");
+
+        assert_eq!(thread.get_schedule_policy(), Ok(normal_policy));
+
+        // On linux, normal priority threads always have static priority 0. Instead the "nice" value is used.
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(thread.get_priority(), Ok(expected_priority));
+        #[cfg(target_os = "linux")]
+        {
+            let nice = unsafe { libc::getpriority(0, 0) };
+            assert_eq!(nice, TEST_PRIORITY as i32);
+        }
+    }
+
     #[test]
     #[cfg(target_os = "linux")]
     fn set_deadline_policy() {
@@ -827,17 +911,19 @@ mod tests {
         #![allow(clippy::identity_op)]
         use std::time::Duration;
 
-        assert!(set_thread_priority_and_policy(
-            0, // current thread
-            ThreadPriority::Deadline {
-                runtime: Duration::from_millis(1),
-                deadline: Duration::from_millis(10),
-                period: Duration::from_millis(100),
-                flags: DeadlineFlags::RESET_ON_FORK,
-            },
-            ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline)
-        )
-        .is_ok());
+        assert!(
+            set_thread_priority_and_policy(
+                0, // current thread
+                ThreadPriority::Deadline {
+                    runtime: Duration::from_millis(1),
+                    deadline: Duration::from_millis(10),
+                    period: Duration::from_millis(100),
+                    flags: DeadlineFlags::RESET_ON_FORK,
+                },
+                ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Deadline)
+            )
+            .is_ok()
+        );
 
         let attributes = get_thread_scheduling_attributes().unwrap();
         assert_eq!(
