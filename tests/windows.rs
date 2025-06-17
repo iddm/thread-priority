@@ -6,6 +6,7 @@ use thread_priority::*;
 #[rstest]
 #[case(ThreadPriority::Min, ThreadPriority::Os(WinAPIThreadPriority::Lowest.try_into().unwrap()))]
 #[case(ThreadPriority::Crossplatform(23u8.try_into().unwrap()), ThreadPriority::Os(WinAPIThreadPriority::BelowNormal.try_into().unwrap()))]
+#[case(ThreadPriority::Crossplatform(80u8.try_into().unwrap()), ThreadPriority::Os(WinAPIThreadPriority::Highest.try_into().unwrap()))]
 #[case(ThreadPriority::Max, ThreadPriority::Os(WinAPIThreadPriority::Highest.try_into().unwrap()))]
 fn get_and_set_priority_requires_capabilities(
     #[case] input_priority: ThreadPriority,
