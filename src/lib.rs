@@ -217,7 +217,7 @@ impl std::error::Error for Error {}
 /// Should be in `[0; 100)` range. The higher the number is - the higher
 /// the priority.
 ///
-/// The only way to create such a value is a safe conversion from an 8-byte
+/// The only way to create such a value is a safe conversion from an 8-bit
 /// unsigned integer ([`u8`]):
 ///
 /// ```rust
