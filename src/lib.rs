@@ -158,6 +158,7 @@
     target_arch = "wasm32",
 ))]
 pub mod unix;
+use std::ops::Deref;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use std::time::Duration;
 
@@ -243,12 +244,50 @@ impl std::error::Error for Error {}
 /// assert_eq!(raw_value, 0);
 /// ```
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct ThreadPriorityValue(u8);
+pub struct ThreadPriorityValue(pub(crate) u8);
 impl ThreadPriorityValue {
     /// The maximum value for a thread priority.
-    pub const MAX: u8 = if cfg!(target_os = "vxworks") { 255 } else { 99 };
+    pub const MAX: Self = Self(if cfg!(target_os = "vxworks") { 255 } else { 99 });
     /// The minimum value for a thread priority.
-    pub const MIN: u8 = 0;
+    pub const MIN: Self = Self(0);
+}
+
+impl Deref for ThreadPriorityValue {
+    type Target = u8;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PartialOrd<u8> for ThreadPriorityValue {
+    fn partial_cmp(&self, other: &u8) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(other)
+    }
+}
+
+impl PartialOrd<ThreadPriorityValue> for u8 {
+    fn partial_cmp(&self, other: &ThreadPriorityValue) -> Option<std::cmp::Ordering> {
+        self.partial_cmp(&other.0)
+    }
+}
+
+impl PartialEq<u8> for ThreadPriorityValue {
+    fn eq(&self, other: &u8) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<ThreadPriorityValue> for u8 {
+    fn eq(&self, other: &ThreadPriorityValue) -> bool {
+        *self == other.0
+    }
+}
+
+impl std::fmt::Display for ThreadPriorityValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl std::convert::TryFrom<u8> for ThreadPriorityValue {
@@ -267,12 +306,9 @@ impl std::convert::TryFrom<u8> for ThreadPriorityValue {
     }
 }
 
-// The From<u8> is unsafe, so there is a TryFrom instead.
-// For this reason we silent the warning from clippy.
-#[allow(clippy::from_over_into)]
-impl std::convert::Into<u8> for ThreadPriorityValue {
-    fn into(self) -> u8 {
-        self.0
+impl From<ThreadPriorityValue> for u8 {
+    fn from(value: ThreadPriorityValue) -> Self {
+        value.0
     }
 }
 
