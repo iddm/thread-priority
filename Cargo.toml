@@ -29,7 +29,7 @@ libc = ">=0.2.161"
 
 [target.'cfg(windows)'.dependencies]
 libc = ">=0.2.123"
-windows = { version = ">=0.61", features = [
+windows = { version = ">=0.61, <0.63", features = [
     "Win32",
     "Win32_System",
     "Win32_System_Threading",

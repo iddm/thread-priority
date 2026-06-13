@@ -1,0 +1,450 @@
+name: Nightly Dependency Update
+
+on:
+    schedule:
+        # One hour after the regular nightly build so they don't run at once.
+        - cron: "0 3 * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    test:
+        name: Test (updated deps)
+        runs-on: ${{ matrix.os || 'ubuntu-latest' }}
+
+        # Resolve to the absolute latest dependency versions, ignoring the crate's
+        # rust-version (MSRV). Edition 2024 uses the MSRV-aware resolver (v3), which
+        # otherwise caps `cargo update` at "latest 1.85-compatible" versions and
+        # defeats the point of this job (it would never see a newer, breaking dep).
+        env:
+            CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: allow
+
+        strategy:
+            fail-fast: false
+            matrix:
+                name:
+                    - stable
+                    - beta
+                    - nightly
+                    - macOS
+                    - Windows
+
+                include:
+                    - name: beta
+                      toolchain: beta
+                    - name: nightly
+                      toolchain: nightly
+                    - name: macOS
+                      os: macOS-latest
+                    - name: Windows
+                      os: windows-latest
+
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v4
+
+            - name: Install toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ matrix.toolchain || 'stable' }}
+
+            # No build cache here on purpose: freshness is the whole point, a cached
+            # target/ keyed on Cargo.toml could otherwise mask a newly published version.
+            - name: Update dependencies to latest
+              run: cargo update --verbose
+
+            - name: Build all features
+              run: cargo build --all-features
+
+            - name: Test all features (other)
+              if: runner.os != 'Linux'
+              run: cargo test --all-features -- --skip set_deadline_policy
+
+            - name: Test all features (Linux)
+              if: runner.os == 'Linux'
+              run: sudo -E /home/runner/.cargo/bin/cargo test --all-features
+
+    report:
+        name: Report failure
+        needs: test
+        if: failure()
+        runs-on: ubuntu-latest
+        permissions:
+            issues: write
+
+        steps:
+            - name: Open or update tracking issue
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+              run: |
+                  set -euo pipefail
+                  label="nightly-deps"
+
+                  # Make sure the label exists (no-op if it already does).
+                  gh label create "$label" --color B60205 \
+                    --description "Nightly dependency-update build failures" || true
+
+                  body="The nightly job that runs \`cargo update\` and rebuilds against the latest compatible dependency versions has **failed**.
+
+                  This usually means a newly published version of an unbounded dependency (e.g. \`windows\`, \`libc = \">=0.2.123\"\`) no longer compiles or passes the tests. Consider pinning an upper bound until it is resolved.
+
+                  Failed run: $RUN_URL"
+
+                  existing=$(gh issue list --state open --label "$label" --json number --jq '.[0].number // empty')
+
+                  if [ -n "$existing" ]; then
+                    gh issue comment "$existing" --body "Nightly dependency update failed again: $RUN_URL"
+                  else
+                    gh issue create \
+                      --title "Nightly dependency update broke the build" \
+                      --label "$label" \
+                      --body "$body"
+                  fi
+
+    # ---------------------------------------------------------------- #
+    # 2. Probe: can we bump *beyond* our declared ranges?
+    # ---------------------------------------------------------------- #
+    detect:
+        name: Detect available upgrades
+        runs-on: ubuntu-latest
+        outputs:
+            bumped: ${{ steps.up.outputs.bumped }}
+        env:
+            CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: allow
+
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v4
+
+            - name: Install toolchain
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Install cargo-edit
+              uses: taiki-e/install-action@v2
+              with:
+                  tool: cargo-edit
+
+            # Bump Cargo.toml to the newest versions, crossing SemVer-incompatible
+            # boundaries:
+            #   a) `cargo upgrade --incompatible` rewrites simple requirements
+            #      (e.g. `rstest = "0.25"` -> `"0.26"`).
+            #   b) cargo-edit won't cross a two-sided cap on its own, so for the
+            #      `windows` range (`>=L, <CAP`) we find the newest stable version
+            #      straight from the crates.io sparse index — `windows` is a
+            #      `cfg(windows)` dep that `cargo upgrade`/`cargo outdated` can't
+            #      see when resolving on Linux — and, if it sits at/above the cap,
+            #      raise the cap to the next breaking boundary via
+            #      `cargo upgrade --pinned`, keeping the `>=L, <CAP` shape. The
+            #      bump is SemVer-aware: a 0.x release bumps the minor, >=1.0 the
+            #      major.
+            - name: Upgrade requirements to latest (incompatible allowed)
+              id: up
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  cargo upgrade --incompatible
+
+                  # Newest *stable* (non-prerelease, non-yanked) windows release.
+                  # The sparse index lists versions in publish order, so sort by
+                  # SemVer rather than trusting the last line — a backport to an
+                  # older line can be published after a newer one.
+                  latest=$(curl -sSfL https://index.crates.io/wi/nd/windows \
+                    | jq -r 'select(.yanked | not) | .vers | select(contains("-") | not)' \
+                    | sort -V | tail -1)
+                  if [ -z "$latest" ]; then
+                    echo "::error::could not determine the latest windows version from crates.io" >&2
+                    exit 1
+                  fi
+
+                  # Parse the two-sided `>=lower, <cap` windows requirement.
+                  lower=$(sed -nE 's/.*version = ">=([0-9.]+), *<[0-9.]+".*/\1/p' Cargo.toml)
+                  cap=$(sed -nE 's/.*version = ">=[0-9.]+, *<([0-9.]+)".*/\1/p' Cargo.toml)
+                  if [ -z "$lower" ] || [ -z "$cap" ]; then
+                    echo "::error::could not parse a '>=L, <C' windows requirement from Cargo.toml" >&2
+                    exit 1
+                  fi
+
+                  # SemVer-aware compare + next-breaking boundary (0.x bumps the
+                  # minor, >=1.0 bumps the major).
+                  major_of() { echo "${1%%.*}"; }
+                  minor_of() { case "$1" in *.*) local r=${1#*.}; echo "${r%%.*}";; *) echo 0;; esac; }
+                  lat_major=$(major_of "$latest"); lat_minor=$(minor_of "$latest")
+                  cap_major=$(major_of "$cap");    cap_minor=$(minor_of "$cap")
+                  if [ "$lat_major" -gt "$cap_major" ] \
+                     || { [ "$lat_major" -eq "$cap_major" ] && [ "$lat_minor" -ge "$cap_minor" ]; }; then
+                    if [ "$lat_major" -gt 0 ]; then
+                      newcap="$((lat_major + 1)).0"
+                    else
+                      newcap="0.$((lat_minor + 1))"
+                    fi
+                    echo "windows: latest $latest >= cap <$cap; raising cap to <$newcap"
+                    cargo upgrade -p "windows@>=$lower, <$newcap" --pinned
+                  else
+                    echo "windows: latest $latest already within <$cap; no change"
+                  fi
+
+                  if git diff --quiet -- Cargo.toml; then
+                    echo "No upgrades available."
+                    echo "bumped=false" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "Upgrades found:"
+                    git --no-pager diff -- Cargo.toml
+                    echo "bumped=true" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Upload bumped manifest
+              if: steps.up.outputs.bumped == 'true'
+              uses: actions/upload-artifact@v4
+              with:
+                  name: bumped-manifest
+                  path: Cargo.toml
+
+    # If the probe itself errors out (crates.io lookup, manifest parse, ...) it
+    # never sets `bumped`, so verify/open-pr/open-issue all skip and nothing is
+    # reported. This job surfaces that infrastructure failure.
+    probe-broken:
+        name: Report broken probe
+        needs: detect
+        if: failure()
+        runs-on: ubuntu-latest
+        permissions:
+            issues: write
+
+        steps:
+            - name: Open or update issue
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+              run: |
+                  set -euo pipefail
+                  label="nightly-deps-probe"
+                  gh label create "$label" --color FBCA04 \
+                    --description "Dependency upgrade probe failures" || true
+
+                  body="The nightly dependency **probe** (\`detect\` job) failed before it could determine whether an upgrade is available — e.g. the crates.io index lookup or the \`Cargo.toml\` parse errored. This is a probe-infrastructure failure, not a dependency build failure.
+
+                  Run: $RUN_URL"
+
+                  existing=$(gh issue list --state open --label "$label" --json number --jq '.[0].number // empty')
+
+                  if [ -n "$existing" ]; then
+                    gh issue comment "$existing" --body "Probe (\`detect\`) failed again: $RUN_URL"
+                  else
+                    gh issue create \
+                      --title "Nightly dependency probe (detect) failed" \
+                      --label "$label" \
+                      --body "$body"
+                  fi
+
+    verify:
+        name: Verify upgrade
+        needs: detect
+        if: needs.detect.outputs.bumped == 'true'
+        runs-on: ${{ matrix.os || 'ubuntu-latest' }}
+        env:
+            CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: allow
+
+        strategy:
+            fail-fast: false
+            matrix:
+                name:
+                    - Linux
+                    - macOS
+                    - Windows
+                include:
+                    - name: macOS
+                      os: macOS-latest
+                    - name: Windows
+                      os: windows-latest
+
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v4
+
+            - name: Apply bumped manifest
+              uses: actions/download-artifact@v4
+              with:
+                  name: bumped-manifest
+
+            - name: Install toolchain
+              uses: dtolnay/rust-toolchain@stable
+
+            # Build + test the upgraded manifest, teeing everything to a log so a
+            # failure can be attached to the issue verbatim.
+            - name: Build & test against upgraded deps
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  log="build-${{ runner.os }}.log"
+                  run () { echo "+ $*" | tee -a "$log"; "$@" 2>&1 | tee -a "$log"; }
+                  run cargo update --verbose
+                  run cargo build --all-features
+                  if [ "${{ runner.os }}" = "Linux" ]; then
+                    run sudo -E /home/runner/.cargo/bin/cargo test --all-features
+                  else
+                    run cargo test --all-features -- --skip set_deadline_policy
+                  fi
+
+            - name: Upload build log
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: build-log-${{ runner.os }}
+                  path: build-${{ runner.os }}.log
+                  if-no-files-found: ignore
+
+    # The verify job above tests on *stable* with the MSRV-aware resolver disabled
+    # (`CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: allow`), so it never exercises the
+    # crate's declared `rust-version`. A bump that raises a lower bound onto a release
+    # that needs a newer Rust would pass verify yet break 1.85 users (and our own MSRV
+    # CI). This job re-validates the bumped manifest on the declared MSRV before we
+    # open a PR — deliberately *without* the `allow` env so the v3 resolver is in force,
+    # mirroring the `cargo check` MSRV gate in ci.yml.
+    msrv:
+        name: Validate MSRV
+        needs: detect
+        if: needs.detect.outputs.bumped == 'true'
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v4
+
+            - name: Apply bumped manifest
+              uses: actions/download-artifact@v4
+              with:
+                  name: bumped-manifest
+
+            - name: Install toolchain (1.85)
+              uses: dtolnay/rust-toolchain@1.85
+
+            - name: Check against MSRV
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  log="build-MSRV.log"
+                  run () { echo "+ $*" | tee -a "$log"; "$@" 2>&1 | tee -a "$log"; }
+                  run cargo check --all-features
+
+            - name: Upload build log
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: build-log-MSRV
+                  path: build-MSRV.log
+                  if-no-files-found: ignore
+
+    open-pr:
+        name: Open bump PR
+        needs: [detect, verify, msrv]
+        if: needs.detect.outputs.bumped == 'true' && needs.verify.result == 'success' && needs.msrv.result == 'success'
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            pull-requests: write
+
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v4
+
+            - name: Apply bumped manifest
+              uses: actions/download-artifact@v4
+              with:
+                  name: bumped-manifest
+
+            - name: Create or update pull request
+              uses: peter-evans/create-pull-request@v7
+              with:
+                  branch: nightly/dependency-bump
+                  delete-branch: true
+                  commit-message: "Bump dependencies to latest"
+                  title: "⬆️ Bump dependencies to latest (verified by nightly probe)"
+                  labels: nightly-deps-probe
+                  body: |
+                      The nightly probe upgraded the dependency requirements to their
+                      latest versions — including SemVer-incompatible bumps and raising the
+                      capped `windows` range — and the full build + test suite passed on
+                      Linux, macOS and Windows, plus a `cargo check` on the declared MSRV
+                      (1.85).
+
+                      This PR contains the resulting `Cargo.toml` change; review the diff and
+                      merge if you're happy to raise the requirements.
+
+                      > Note: opened with the default `GITHUB_TOKEN`, so CI does not re-run on
+                      > this PR. The probe already built and tested this exact change — see the
+                      > run below.
+
+                      Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    open-issue:
+        name: Report failed upgrade
+        needs: [detect, verify, msrv]
+        if: needs.detect.outputs.bumped == 'true' && (needs.verify.result == 'failure' || needs.msrv.result == 'failure')
+        runs-on: ubuntu-latest
+        permissions:
+            issues: write
+
+        steps:
+            - name: Download build logs
+              uses: actions/download-artifact@v4
+              with:
+                  pattern: build-log-*
+                  path: logs
+
+            - name: Open or update issue with error log
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+              run: |
+                  set -euo pipefail
+                  label="nightly-deps-probe"
+                  gh label create "$label" --color FBCA04 \
+                    --description "Dependency upgrade probe failures" || true
+
+                  # nullglob so a setup failure that produced no log artifact (every
+                  # job dying before `Build & test`) yields an empty array and the
+                  # fallback message below, rather than a literal-glob `tail` that
+                  # would crash this reporting step under `set -e`.
+                  shopt -s nullglob
+                  logs=(logs/*/*.log)
+
+                  {
+                    echo "The nightly probe upgraded dependencies to their latest versions"
+                    echo "(SemVer-incompatible bumps plus raising the capped \`windows\` range)"
+                    echo "but the build/test suite or the MSRV check **failed** — so we cannot"
+                    echo "raise the requirements yet."
+                    echo
+                    if [ ${#logs[@]} -eq 0 ]; then
+                      echo "_No build logs were produced: the verify/MSRV jobs likely failed during"
+                      echo "setup (checkout, artifact download, or toolchain install). See the run._"
+                      echo
+                    else
+                      echo "Tail of each job's log:"
+                      echo
+                      for f in "${logs[@]}"; do
+                        echo "<details><summary>$(basename "$f")</summary>"
+                        echo
+                        echo '```'
+                        tail -n 120 "$f"
+                        echo '```'
+                        echo
+                        echo "</details>"
+                        echo
+                      done
+                    fi
+                    echo "Full run: $RUN_URL"
+                  } > issue-body.md
+
+                  existing=$(gh issue list --state open --label "$label" --json number --jq '.[0].number // empty')
+
+                  if [ -n "$existing" ]; then
+                    gh issue comment "$existing" --body-file issue-body.md
+                  else
+                    gh issue create \
+                      --title "Dependency upgrade probe failed" \
+                      --label "$label" \
+                      --body-file issue-body.md
+                  fi

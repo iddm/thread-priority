@@ -7,3 +7,5 @@ Cargo.lock
 Vagrantfile
 .vagrant/
 .vscode/
+__pycache__/
+*.pyc
