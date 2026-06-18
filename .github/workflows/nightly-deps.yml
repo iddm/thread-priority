@@ -96,7 +96,14 @@ jobs:
                   existing=$(gh issue list --state open --label "$label" --json number --jq '.[0].number // empty')
 
                   if [ -n "$existing" ]; then
-                    gh issue comment "$existing" --body "Nightly dependency update failed again: $RUN_URL"
+                    # Throttle: only re-ping an already-open issue if it's been quiet for
+                    # a week, so a persistent failure doesn't add a comment every night.
+                    updated=$(gh issue view "$existing" --json updatedAt --jq '.updatedAt')
+                    if [ "$(date -d "$updated" +%s)" -lt "$(date -d '7 days ago' +%s)" ]; then
+                      gh issue comment "$existing" --body "Nightly dependency update failed again: $RUN_URL"
+                    else
+                      echo "Issue #$existing updated $updated (< 7 days ago); skipping comment."
+                    fi
                   else
                     gh issue create \
                       --title "Nightly dependency update broke the build" \
@@ -112,6 +119,7 @@ jobs:
         runs-on: ubuntu-latest
         outputs:
             bumped: ${{ steps.up.outputs.bumped }}
+            fp: ${{ steps.fp.outputs.fp }}
         env:
             CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: allow
 
@@ -195,6 +203,25 @@ jobs:
                     echo "bumped=true" >> "$GITHUB_OUTPUT"
                   fi
 
+            # Content fingerprint of the *proposed* dependency requirements (name +
+            # requirement, per kind/target), so open-pr can tell whether this exact
+            # bump was already proposed and rejected. cargo parses the manifest, so we
+            # don't hand-parse TOML; it's dep-only, so unrelated Cargo.toml edits (e.g.
+            # the package version) don't change it.
+            - name: Fingerprint the bump
+              id: fp
+              if: steps.up.outputs.bumped == 'true'
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  fp=$(cargo metadata --no-deps --format-version 1 \
+                    | jq -r '.packages[0].dependencies
+                              | map("\(.target // "any")|\(.kind // "normal")|\(.name)=\(.req)")
+                              | sort | join(";")' \
+                    | sha256sum | cut -c1-12)
+                  echo "Bump fingerprint: $fp"
+                  echo "fp=$fp" >> "$GITHUB_OUTPUT"
+
             - name: Upload bumped manifest
               if: steps.up.outputs.bumped == 'true'
               uses: actions/upload-artifact@v4
@@ -231,7 +258,14 @@ jobs:
                   existing=$(gh issue list --state open --label "$label" --json number --jq '.[0].number // empty')
 
                   if [ -n "$existing" ]; then
-                    gh issue comment "$existing" --body "Probe (\`detect\`) failed again: $RUN_URL"
+                    # Throttle: only re-ping an already-open issue if it's been quiet for
+                    # a week, so a persistent failure doesn't add a comment every night.
+                    updated=$(gh issue view "$existing" --json updatedAt --jq '.updatedAt')
+                    if [ "$(date -d "$updated" +%s)" -lt "$(date -d '7 days ago' +%s)" ]; then
+                      gh issue comment "$existing" --body "Probe (\`detect\`) failed again: $RUN_URL"
+                    else
+                      echo "Issue #$existing updated $updated (< 7 days ago); skipping comment."
+                    fi
                   else
                     gh issue create \
                       --title "Nightly dependency probe (detect) failed" \
@@ -355,7 +389,31 @@ jobs:
               with:
                   name: bumped-manifest
 
+            # Don't re-propose a bump the maintainer already rejected. We keep a single
+            # rolling branch (so the open PR is updated in place rather than piling up),
+            # and match on the *content fingerprint* stamped into each PR body: skip only
+            # if a closed, unmerged PR proposed this exact set of requirement changes. A
+            # genuinely different future bump has a different fingerprint and still opens.
+            # Matching on the PR record (not the branch) means it works even if the
+            # branch was deleted on close.
+            - name: Check whether this exact bump was already rejected
+              id: rejected
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  FP: ${{ needs.detect.outputs.fp }}
+              run: |
+                  set -euo pipefail
+                  count=$(gh pr list --state all --head nightly/dependency-bump --limit 200 --json state,body \
+                    --jq "[.[] | select(.state == \"CLOSED\") | select((.body // \"\") | contains(\"bump-fingerprint: $FP\"))] | length")
+                  if [ "${count:-0}" -gt 0 ]; then
+                    echo "This exact bump (fingerprint $FP) was already closed unmerged; not re-proposing."
+                    echo "skip=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "skip=false" >> "$GITHUB_OUTPUT"
+                  fi
+
             - name: Create or update pull request
+              if: steps.rejected.outputs.skip != 'true'
               uses: peter-evans/create-pull-request@v7
               with:
                   branch: nightly/dependency-bump
@@ -378,6 +436,8 @@ jobs:
                       > run below.
 
                       Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+                      <!-- bump-fingerprint: ${{ needs.detect.outputs.fp }} -->
 
     open-issue:
         name: Report failed upgrade
@@ -441,7 +501,14 @@ jobs:
                   existing=$(gh issue list --state open --label "$label" --json number --jq '.[0].number // empty')
 
                   if [ -n "$existing" ]; then
-                    gh issue comment "$existing" --body-file issue-body.md
+                    # Throttle: only re-ping an already-open issue if it's been quiet for
+                    # a week, so a persistent failure doesn't add a comment every night.
+                    updated=$(gh issue view "$existing" --json updatedAt --jq '.updatedAt')
+                    if [ "$(date -d "$updated" +%s)" -lt "$(date -d '7 days ago' +%s)" ]; then
+                      gh issue comment "$existing" --body-file issue-body.md
+                    else
+                      echo "Issue #$existing updated $updated (< 7 days ago); skipping comment."
+                    fi
                   else
                     gh issue create \
                       --title "Dependency upgrade probe failed" \
