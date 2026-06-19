@@ -13,7 +13,7 @@ edition = "2024"
 rust-version = "1.85"
 
 [dev-dependencies]
-rstest = "0.25"
+rstest = "0.26"
 
 [dependencies]
 log = "0.4"
