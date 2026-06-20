@@ -1,3 +1,7 @@
+# 3.1.0, 3.1.1 on 20-06-2026
+
+Changed the `windows` crate requirements from `=0.61` to `>=0.61 <0.63`.
+
 # 3.0.0 on 03-09-2025
 
 **Breaking changes**:
